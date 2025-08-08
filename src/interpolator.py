@@ -309,7 +309,7 @@ def plot_overview(df: pd.DataFrame):
                 t1, t2 = td.iloc[i]['timestamp'], td.iloc[i+1]['timestamp']
                 d1, d2 = td.iloc[i]['dist_m'], td.iloc[i+1]['dist_m']
                 v1, v2 = max(td.iloc[i]['speed_ms'], 0.0), max(td.iloc[i+1]['speed_ms'], 0.0)
-                tr, up, lo = calc_bounds(t1, d1, v1, t2, d2, v2)
+                tr, up, lo = calc_bounds(t1, d1, v1, t2, d2, v2, free_endpoint_speeds=ASSUME_FREE_ENDPOINT_SPEEDS)
                 if tr is None:
                     continue
                 ax.fill_between(td.iloc[i]['tsec'] + tr, lo, up, color=color, alpha=0.2)
@@ -347,7 +347,7 @@ def plot_zoomed_intervals(df: pd.DataFrame, per_direction: int = 6):
                 dt_sec = (t2 - t1).total_seconds()
                 if not (10 <= dt_sec <= 60):
                     continue
-                tr, up, lo = calc_bounds(t1, d1, v1, t2, d2, v2)
+                tr, up, lo = calc_bounds(t1, d1, v1, t2, d2, v2, free_endpoint_speeds=ASSUME_FREE_ENDPOINT_SPEEDS)
                 if tr is None:
                     continue
                 t_rel = td.iloc[i]['tsec'] + tr
