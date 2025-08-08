@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Virtual environments / env files
+.venv/
+venv/
+.env
+.env.*
+
+# Local data and generated outputs
+data/*.csv
+outputs/
+
+# IDE
+.vscode/
+.idea/
+
