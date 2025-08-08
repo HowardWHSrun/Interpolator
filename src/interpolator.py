@@ -295,15 +295,15 @@ def plot_overview(df: pd.DataFrame):
     fig, axes = plt.subplots(2, 1, figsize=(18, 12))
 
     def plot_dir(ax, trips, cmap):
-        colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, len(trips)))
+        colors = plt.get_cmap(cmap)(np.linspace(0, 1, len(trips)))
         for idx, trip_id in enumerate(trips):
             td = df[df['trip_id'] == trip_id].sort_values('timestamp').copy()
             if len(td) < 2:
                 continue
             start = td['timestamp'].iloc[0]
             td['tsec'] = (td['timestamp'] - start).dt.total_seconds()
-            color = colors[idx]
-            ax.plot(td['tsec'], td['dist_m'], color=color, alpha=0.5, linewidth=1)
+            # show each signal point as a dot
+            ax.scatter(td['tsec'], td['dist_m'], s=10, color='black', alpha=0.6, zorder=3)
             # bounds per segment
             for i in range(len(td)-1):
                 t1, t2 = td.iloc[i]['timestamp'], td.iloc[i+1]['timestamp']
@@ -312,7 +312,8 @@ def plot_overview(df: pd.DataFrame):
                 tr, up, lo = calc_bounds(t1, d1, v1, t2, d2, v2, free_endpoint_speeds=ASSUME_FREE_ENDPOINT_SPEEDS)
                 if tr is None:
                     continue
-                ax.fill_between(td.iloc[i]['tsec'] + tr, lo, up, color=color, alpha=0.2)
+                # shaded feasible position range
+                ax.fill_between(td.iloc[i]['tsec'] + tr, lo, up, color='lightsteelblue', alpha=0.4, linewidth=0, zorder=2)
         ax.grid(True, alpha=0.3)
         ax.set_xlabel('Time from trip start (s)')
         ax.set_ylabel('Distance (m)')
@@ -360,10 +361,14 @@ def plot_zoomed_intervals(df: pd.DataFrame, per_direction: int = 6):
 
                 fig, (ax_d, ax_v) = plt.subplots(2, 1, figsize=(12, 8), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
                 ax_d.fill_between(t_rel, lo, up, color='lightsteelblue', alpha=0.6)
-                ax_d.plot(t_rel, d_center, color='gray', linestyle='--', linewidth=1.5)
+                # show the two signal points for this interval as dots
                 ax_d.scatter([t_rel[0], t_rel[-1]], [d1, d2], color='k', zorder=5)
                 ax_d.set_ylabel('Distance (m)')
-                ax_d.set_title(f'{direction.title()} Trip {trip_id} — interval {i} (Δt={dt_sec:.1f}s)')
+                # title: inbound should be just interval name
+                if direction == 'inbound':
+                    ax_d.set_title(f'interval {i}')
+                else:
+                    ax_d.set_title(f'{direction.title()} Trip {trip_id} — interval {i} (Δt={dt_sec:.1f}s)')
                 ax_d.grid(True, alpha=0.3)
 
                 ax_v.plot(t_rel, v_up_mph, color='steelblue', linewidth=2, label='Upper speed (mph)')
