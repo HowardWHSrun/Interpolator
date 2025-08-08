@@ -32,6 +32,10 @@ DATA_PATH = os.path.join('data', '4_k_line_data_with_trip_id.csv')
 PLOTS_DIR = os.path.join('outputs', 'plots')
 REPORTS_DIR = os.path.join('outputs', 'reports')
 
+# If True, do not assume measured endpoint speeds are exact.
+# Instead, allow endpoint speeds to vary within [0, MAX_SPEED].
+ASSUME_FREE_ENDPOINT_SPEEDS = True
+
 
 def ensure_dirs():
     os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -101,7 +105,7 @@ def solve_speed_limit_for_reach(s_rem: float, T_rem: float, v_end: float, tol: f
     return 0.5 * (lo + hi)
 
 
-def calc_bounds(t1, d1, v1, t2, d2, v2):
+def calc_bounds(t1, d1, v1, t2, d2, v2, free_endpoint_speeds: bool = False):
     """Compute physically-consistent upper/lower distance envelopes between two points.
 
     Assumptions:
@@ -134,14 +138,26 @@ def calc_bounds(t1, d1, v1, t2, d2, v2):
     v1 = max(0.0, float(v1))
     v2 = max(0.0, float(v2))
 
+    # Choose endpoint speeds to use for upper/lower envelopes
+    if free_endpoint_speeds:
+        v_start_for_upper = MAX_SPEED
+        v_end_for_upper = MAX_SPEED
+        v_start_for_lower = 0.0
+        v_end_for_lower = 0.0
+    else:
+        v_start_for_upper = v1
+        v_end_for_upper = v2
+        v_start_for_lower = v1
+        v_end_for_lower = v2
+
     # Forward/backward speed cone for v_max (pointwise maximum allowable speed)
-    v_max_fwd = np.minimum(v1 + MAX_ACCEL * t_rel, MAX_SPEED)
-    v_max_bwd = np.minimum(v2 + MAX_DECEL * (dt - t_rel), MAX_SPEED)
+    v_max_fwd = np.minimum(v_start_for_upper + MAX_ACCEL * t_rel, MAX_SPEED)
+    v_max_bwd = np.minimum(v_end_for_upper + MAX_DECEL * (dt - t_rel), MAX_SPEED)
     v_max_env = np.minimum(v_max_fwd, v_max_bwd)
 
     # Minimum feasible speed envelope v_min (pointwise lower bound)
-    v_min_fwd = np.maximum(v1 - MAX_DECEL * t_rel, 0.0)
-    v_min_bwd = np.maximum(v2 - MAX_ACCEL * (dt - t_rel), 0.0)
+    v_min_fwd = np.maximum(v_start_for_lower - MAX_DECEL * t_rel, 0.0)
+    v_min_bwd = np.maximum(v_end_for_lower - MAX_ACCEL * (dt - t_rel), 0.0)
     v_min_env = np.maximum(v_min_fwd, v_min_bwd)
     v_min_env = np.minimum(v_min_env, v_max_env)
 
