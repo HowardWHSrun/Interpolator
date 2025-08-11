@@ -1,0 +1,24 @@
+{
+  "trains": [
+    {
+      "id": "K-line",
+      "label": "K Line \u2014 SFMTA",
+      "inbound": {
+        "summary": "trajectory_analysis_output/Results/reports/analysis_summary_Inbound_trip_f1246aa0-95f9-4ad0-a3d5-3c03fec4e44f.json",
+        "stops": "trajectory_analysis_output/Results/reports/detected_stops_Inbound_trip_f1246aa0-95f9-4ad0-a3d5-3c03fec4e44f.json",
+        "interpolated": "trajectory_analysis_output/Results/exported_data/interpolated_trajectories_overview_Inbound_trip_f1246aa0-95f9-4ad0-a3d5-3c03fec4e44f.csv",
+        "overview_img": "trajectory_analysis_output/Results/overview/inbound_full_trip_overview.png",
+        "segments_dir": "trajectory_analysis_output/Results/individual_segments/",
+        "segment_prefix": "inbound segment_"
+      },
+      "outbound": {
+        "summary": "trajectory_analysis_output/Results/reports/analysis_summary_Outbound_trip_a5014681-674a-4b9e-ab76-a2dd87ab6b22_seg_1.json",
+        "stops": "trajectory_analysis_output/Results/reports/detected_stops_Outbound_trip_a5014681-674a-4b9e-ab76-a2dd87ab6b22_seg_1.json",
+        "interpolated": "trajectory_analysis_output/Results/exported_data/interpolated_trajectories_overview_Outbound_trip_a5014681-674a-4b9e-ab76-a2dd87ab6b22_seg_1.csv",
+        "overview_img": "trajectory_analysis_output/Results/overview/outbound_full_trip_overview.png",
+        "segments_dir": "trajectory_analysis_output/Results/individual_segments/",
+        "segment_prefix": "outbound segment_"
+      }
+    }
+  ]
+}

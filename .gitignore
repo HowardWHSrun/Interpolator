@@ -1,0 +1,11 @@
+# Ignore heavy outputs and caches
+trajectory_analysis_output/**
+!trajectory_analysis_output/Results/**
+!trajectory_analysis_output/Results/exported_data/interpolated_trajectories_overview_*
+!trajectory_analysis_output/Results/reports/*.json
+!trajectory_analysis_output/Results/overview/*.png
+interpolated_trajectory.csv
+*.zip
+webapp-react/node_modules/**
+node_modules/**
+.DS_Store

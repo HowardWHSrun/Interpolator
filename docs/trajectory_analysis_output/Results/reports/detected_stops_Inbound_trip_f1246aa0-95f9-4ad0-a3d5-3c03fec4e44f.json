@@ -1,0 +1,146 @@
+[
+  {
+    "type": "intersection",
+    "t_start_s": 108.0,
+    "t_end_s": 170.0,
+    "duration_s": 62.0,
+    "distance_ft": 41498.43,
+    "latitude": 37.72332763671875,
+    "longitude": -122.45339965820312
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 232.0,
+    "t_end_s": 232.0,
+    "duration_s": 0.0,
+    "distance_ft": 40229.24,
+    "latitude": 37.7242317199707,
+    "longitude": -122.45764923095705
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 294.0,
+    "t_end_s": 341.0,
+    "duration_s": 47.0,
+    "distance_ft": 38987.53,
+    "latitude": 37.72523880004883,
+    "longitude": -122.4620590209961
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 464.0,
+    "t_end_s": 464.0,
+    "duration_s": 0.0,
+    "distance_ft": 35478.22,
+    "latitude": 37.73076629638672,
+    "longitude": -122.47116088867188
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 588.0,
+    "t_end_s": 588.0,
+    "duration_s": 0.0,
+    "distance_ft": 34086.18,
+    "latitude": 37.73426818847656,
+    "longitude": -122.47159576416016
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 837.0,
+    "t_end_s": 837.0,
+    "duration_s": 0.0,
+    "distance_ft": 31239.49,
+    "latitude": 37.74055480957031,
+    "longitude": -122.46609497070312
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 992.0,
+    "t_end_s": 992.0,
+    "duration_s": 0.0,
+    "distance_ft": 30742.68,
+    "latitude": 37.74169921875,
+    "longitude": -122.46515655517578
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1115.0,
+    "t_end_s": 1115.0,
+    "duration_s": 0.0,
+    "distance_ft": 27700.68,
+    "latitude": 37.74828720092773,
+    "longitude": -122.4587631225586
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1317.0,
+    "t_end_s": 1317.0,
+    "duration_s": 0.0,
+    "distance_ft": 19019.65,
+    "latitude": 37.76266479492188,
+    "longitude": -122.43517303466795
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1410.0,
+    "t_end_s": 1410.0,
+    "duration_s": 0.0,
+    "distance_ft": 16752.74,
+    "latitude": 37.76700973510742,
+    "longitude": -122.42955780029295
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1549.0,
+    "t_end_s": 1549.0,
+    "duration_s": 0.0,
+    "distance_ft": 12541.38,
+    "latitude": 37.775150299072266,
+    "longitude": -122.41920471191406
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1642.0,
+    "t_end_s": 1642.0,
+    "duration_s": 0.0,
+    "distance_ft": 10142.16,
+    "latitude": 37.77978897094727,
+    "longitude": -122.4133071899414
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1720.0,
+    "t_end_s": 1720.0,
+    "duration_s": 0.0,
+    "distance_ft": 7595.62,
+    "latitude": 37.78472137451172,
+    "longitude": -122.40705871582033
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1797.0,
+    "t_end_s": 1797.0,
+    "duration_s": 0.0,
+    "distance_ft": 5375.62,
+    "latitude": 37.78902053833008,
+    "longitude": -122.401611328125
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1828.0,
+    "t_end_s": 1828.0,
+    "duration_s": 0.0,
+    "distance_ft": 5306.97,
+    "latitude": 37.789154052734375,
+    "longitude": -122.40144348144533
+  },
+  {
+    "type": "intersection",
+    "t_start_s": 1906.0,
+    "t_end_s": 1906.0,
+    "duration_s": 0.0,
+    "distance_ft": 3470.41,
+    "latitude": 37.79272079467773,
+    "longitude": -122.3969497680664
+  }
+]

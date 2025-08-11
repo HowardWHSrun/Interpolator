@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>K Line Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand">
+      <div class="logo">K</div>
+      <div class="titles">
+        <h1>K Line Analytics</h1>
+        <p>No reverse • Station 10–40 s • Intersection 0–90 s • Likely accel 2 mph/s</p>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button id="resetZoomBtn" class="btn"><span class="material-symbols-outlined">zoom_out_map</span><span>Reset Zoom</span></button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Trip</h3>
+        <select id="trainSelect"></select>
+      </div>
+      <div class="card">
+        <h3>Direction</h3>
+        <label><input type="radio" name="dir" value="inbound" checked> Inbound</label>
+        <label><input type="radio" name="dir" value="outbound"> Outbound</label>
+      </div>
+      <div class="card">
+        <h3>Trip (raw overlay)</h3>
+        <select id="tripIdSelect"></select>
+      </div>
+      <div class="card">
+        <h3>Display</h3>
+        <label><input type="checkbox" id="toggleBand" checked> Feasible band</label>
+        <label><input type="checkbox" id="toggleStops" checked> Stops</label>
+      </div>
+      <div class="card kpis">
+        <h3>Summary</h3>
+        <div class="kpi"><span>Duration</span><strong id="kpi-duration">–</strong></div>
+        <div class="kpi"><span>Distance</span><strong id="kpi-distance">–</strong></div>
+        <div class="kpi"><span>Avg speed</span><strong id="kpi-avg">–</strong></div>
+        <div class="kpi"><span>Max speed</span><strong id="kpi-max">–</strong></div>
+        <div class="kpi"><span>Stops</span><strong id="kpi-stops">–</strong></div>
+      </div>
+      <div class="card">
+        <h3>Downloads</h3>
+        <a id="dl-csv" href="#" target="_blank">Interpolated CSV</a>
+        <a id="dl-stops" href="#" target="_blank">Stops JSON</a>
+        <a id="dl-summary" href="#" target="_blank">Summary JSON</a>
+      </div>
+    </aside>
+
+    <main class="content">
+    <section class="direction-section active" id="tab-inbound">
+      <div class="section-header">
+        <h2>Inbound Overview</h2>
+      </div>
+      <div class="charts">
+        <div class="chart" id="distanceChart-inbound"></div>
+        <div class="chart" id="speedChart-inbound"></div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-header">
+          <h3 id="detail-title-inbound">Select a segment by clicking the overview</h3>
+          <div class="detail-actions">
+            <button id="clearDetail-inbound" class="btn ghost">Clear</button>
+          </div>
+        </div>
+        <div class="detail-grid">
+          <div class="chart" id="detail-distance-inbound"></div>
+          <div class="chart" id="detail-speed-inbound"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="direction-section" id="tab-outbound">
+      <div class="section-header">
+        <h2>Outbound Overview</h2>
+      </div>
+      <div class="charts">
+        <div class="chart" id="distanceChart-outbound"></div>
+        <div class="chart" id="speedChart-outbound"></div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-header">
+          <h3 id="detail-title-outbound">Select a segment by clicking the overview</h3>
+          <div class="detail-actions">
+            <button id="clearDetail-outbound" class="btn ghost">Clear</button>
+          </div>
+        </div>
+        <div class="detail-grid">
+          <div class="chart" id="detail-distance-outbound"></div>
+          <div class="chart" id="detail-speed-outbound"></div>
+        </div>
+      </div>
+    </section>
+    </main>
+  </div>
+
+  <footer>
+    <small>Data: trajectory_analysis_output/Results • Use pinch/scroll to zoom, drag to pan, and double-click to autoscale.</small>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
+
+
