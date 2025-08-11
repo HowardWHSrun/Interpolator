@@ -301,9 +301,9 @@ async function renderDirection(dirKey, dirSpec) {
     { name: 'Feasible band', x: time, y: maxPos, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasDistBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
     // outlines to make narrow bands visible
     // Use non-WebGL for outlines so rectangle-select reliably emits events
-    ensureTrace('Band min', time, minPos, { type: 'scatter', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Band max', time, maxPos, { type: 'scatter', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Likely', time, likePos, { type: 'scatter', line: { color: '#111827', dash: 'dot', width: 2 }, showlegend: true }),
+    ensureTrace('Band min', time, minPos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
+    ensureTrace('Band max', time, maxPos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
+    ensureTrace('Likely', time, likePos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
   ];
   const distLayout = layout(`${dirKey} distance vs time (no reverse)`, 'Time (s)', 'Distance (ft)');
   distLayout.shapes = stopSpans.map(s => ({ type: 'rect', xref: 'x', yref: 'paper', y0: 0, y1: 1, x0: s.x0, x1: s.x1, fillcolor: s.fillcolor, line: { width: 0 } }));
@@ -327,9 +327,9 @@ async function renderDirection(dirKey, dirSpec) {
     { name: 'Feasible band', x: time, y: maxSpd, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasSpdBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
     // outlines to make narrow bands visible
     // Use non-WebGL for outlines so rectangle-select reliably emits events
-    ensureTrace('Band min', time, minSpd, { type: 'scatter', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Band max', time, maxSpd, { type: 'scatter', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Likely', time, likeSpd, { type: 'scatter', line: { color: '#111827', dash: 'dot', width: 2 }, showlegend: true }),
+    ensureTrace('Band min', time, minSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
+    ensureTrace('Band max', time, maxSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
+    ensureTrace('Likely', time, likeSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
   ];
   const spdLayout = layout(`${dirKey} speed vs time (no reverse)`, 'Time (s)', 'Speed (mph)');
   spdLayout.shapes = stopSpans.map(s => ({ type: 'rect', xref: 'x', yref: 'paper', y0: 0, y1: 1, x0: s.x0, x1: s.x1, fillcolor: s.fillcolor, line: { width: 0 } }));
