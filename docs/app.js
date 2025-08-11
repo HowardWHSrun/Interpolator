@@ -259,13 +259,29 @@ function renderSegments(containerId, dirSpec, startIndex = 1, endIndex = 12) {
 async function renderDirection(dirKey, dirSpec) {
   // Load interpolated CSV for distance/time bands and likely curve
   const rows = await fetchCSV(dirSpec.interpolated);
-  const time = rows.map(r => r.time_s);
-  const minPos = rows.map(r => r.min_position_ft);
-  const maxPos = rows.map(r => r.max_position_ft);
-  const likePos = rows.map(r => r.likely_position_ft);
-  const minSpd = rows.map(r => r.min_speed_mph);
-  const maxSpd = rows.map(r => r.max_speed_mph);
-  const likeSpd = rows.map(r => r.likely_speed_mph);
+  const time = [];
+  const minPos = [], maxPos = [], likePos = [];
+  const minSpd = [], maxSpd = [], likeSpd = [];
+  for (const r of rows) {
+    const t = Number(r.time_s);
+    const pmin = Number(r.min_position_ft);
+    const pmax = Number(r.max_position_ft);
+    const plike = Number(r.likely_position_ft);
+    const smin = Number(r.min_speed_mph);
+    const smax = Number(r.max_speed_mph);
+    const slike = Number(r.likely_speed_mph);
+    if (!Number.isFinite(t)) continue;
+    // position series must be finite to render distance
+    if (!Number.isFinite(pmin) || !Number.isFinite(pmax) || !Number.isFinite(plike)) continue;
+    time.push(t);
+    minPos.push(pmin);
+    maxPos.push(pmax);
+    likePos.push(plike);
+    // push speeds only if finite; otherwise fall back to 0 to avoid empty arrays
+    minSpd.push(Number.isFinite(smin) ? smin : 0);
+    maxSpd.push(Number.isFinite(smax) ? smax : 0);
+    likeSpd.push(Number.isFinite(slike) ? slike : 0);
+  }
 
   // Overlay stop windows if available
   let stopSpans = [];
@@ -305,7 +321,7 @@ async function renderDirection(dirKey, dirSpec) {
   }
 
   // Speed chart (bands + likely)
-  const hasSpdBand = time.some((_, i) => (maxSpd[i] - minSpd[i]) > 0.1);
+  const hasSpdBand = time.length > 0 && maxSpd.length === time.length && minSpd.length === time.length && time.some((_, i) => Number.isFinite(maxSpd[i]) && Number.isFinite(minSpd[i]) && (maxSpd[i] - minSpd[i]) > 0.1);
   const spdData = [
     { name: 'Feasible band', x: time, y: minSpd, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
     { name: 'Feasible band', x: time, y: maxSpd, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasSpdBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
@@ -323,7 +339,12 @@ async function renderDirection(dirKey, dirSpec) {
   spdLayout.margin = Object.assign({}, spdLayout.margin, { b: 80 });
   spdLayout.hovermode = 'x unified';
   spdLayout.dragmode = 'select';
-  Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+  try {
+    Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+  } catch (e) {
+    // If speed arrays are empty, render an empty placeholder chart
+    Plotly.newPlot(`speedChart-${dirKey}`, [], spdLayout, { responsive: true, displaylogo: false });
+  }
 
   // No segment grid rendering (removed for cleaner UI)
 
