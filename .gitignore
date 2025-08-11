@@ -13,11 +13,25 @@ venv/
 .env
 .env.*
 
-# Local data and generated outputs
-data/*.csv
-outputs/
-
 # IDE
 .vscode/
 .idea/
 
+# Node
+node_modules/
+webapp-react/node_modules/
+
+# Local data and generated outputs (root)
+data/*.csv
+outputs/
+trajectory_analysis_output/**
+
+# Keep selected results (if present at repo root)
+!trajectory_analysis_output/Results/**
+!trajectory_analysis_output/Results/exported_data/interpolated_trajectories_overview_*
+!trajectory_analysis_output/Results/reports/*.json
+!trajectory_analysis_output/Results/overview/*.png
+
+# App artifacts
+interpolated_trajectory.csv
+*.zip

@@ -1,0 +1,36 @@
+{
+  "analysis_timestamp": "2025-08-11T09:04:27.868291",
+  "label": "Outbound_trip_a5014681-674a-4b9e-ab76-a2dd87ab6b22_seg_1",
+  "points": 94,
+  "segments": 93,
+  "time_range_s": [
+    0.0,
+    2414.0
+  ],
+  "duration_minutes": 40.233333333333334,
+  "distance_ft": 40984.65,
+  "speed_stats": {
+    "avg_mph": 6.74936170212766,
+    "max_mph": 21.94,
+    "min_mph": 0.0,
+    "std_mph": 6.2306531196875605
+  },
+  "constraints": {
+    "a_mph_s": 3.0,
+    "b_mph_s": 5.0,
+    "vmax_mph": 60.0,
+    "reverse_allowed": false,
+    "likely_accel_mph_s": 2.0
+  },
+  "dwell_rules": {
+    "short_move_threshold_ft": 80,
+    "station_dwell_min_s": 10,
+    "station_dwell_max_s": 40,
+    "intersection_dwell_max_s": 90
+  },
+  "stops_summary": {
+    "total_stops": 17,
+    "stations": 1,
+    "intersections": 16
+  }
+}
