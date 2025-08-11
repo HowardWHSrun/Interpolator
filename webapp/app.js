@@ -2,15 +2,16 @@
 
 function resolvePath(p) {
   if (!p) return p;
-  // If path is absolute, adapt depending on hosting:
-  // - Local dev served from project root: we used absolute '/...'
-  // - Local dev served from '/webapp/': prefix '..' to reach project root
-  // - GitHub Pages project site (root is '/<repo>/'): strip leading '/'
+  const pathName = window.location.pathname;
+  const inWebapp = pathName.includes('/webapp/');
+  const inDocs = pathName.includes('/docs/');
+  // Absolute paths
   if (p.startsWith('/')) {
-    const isWebappSubdir = window.location.pathname.includes('/webapp/');
-    if (isWebappSubdir) return `..${p}`;
-    return p.replace(/^\//, '');
+    if (inWebapp || inDocs) return `..${p}`; // go up one level when hosted under a subdir
+    return p.replace(/^\//, ''); // project Pages root '/<repo>/' → use relative
   }
+  // Relative paths
+  if (inWebapp) return `../${p}`; // lift out of /webapp/
   return p;
 }
 
