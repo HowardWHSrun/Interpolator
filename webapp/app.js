@@ -308,6 +308,8 @@ async function renderDirection(dirKey, dirSpec) {
     ensureTrace('Likely', time, likePos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
   ];
   const distLayout = layout(`${dirKey} distance vs time (no reverse)`, 'Time (s)', 'Distance (ft)');
+  distLayout.paper_bgcolor = '#ffffff';
+  distLayout.plot_bgcolor = '#ffffff';
   distLayout.shapes = stopSpans.map(s => ({ type: 'rect', xref: 'x', yref: 'paper', y0: 0, y1: 1, x0: s.x0, x1: s.x1, fillcolor: s.fillcolor, line: { width: 0 } }));
   distLayout.legend = { orientation: 'h', x: 0, y: -0.25, yanchor: 'top', font: { size: 10 } };
   distLayout.xaxis = Object.assign({}, distLayout.xaxis, { rangeslider: { visible: true, thickness: 0.08 }, automargin: true });
@@ -333,6 +335,8 @@ async function renderDirection(dirKey, dirSpec) {
     ensureTrace('Likely', time, likeSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
   ];
   const spdLayout = layout(`${dirKey} speed vs time (no reverse)`, 'Time (s)', 'Speed (mph)');
+  spdLayout.paper_bgcolor = '#ffffff';
+  spdLayout.plot_bgcolor = '#ffffff';
   spdLayout.shapes = stopSpans.map(s => ({ type: 'rect', xref: 'x', yref: 'paper', y0: 0, y1: 1, x0: s.x0, x1: s.x1, fillcolor: s.fillcolor, line: { width: 0 } }));
   spdLayout.legend = { orientation: 'h', x: 0, y: -0.25, yanchor: 'top', font: { size: 10 } };
   spdLayout.xaxis = Object.assign({}, spdLayout.xaxis, { rangeslider: { visible: true, thickness: 0.08 }, automargin: true });
