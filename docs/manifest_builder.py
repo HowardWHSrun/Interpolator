@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'webapp' / 'manifest.json'
+OUT = ROOT / 'docs' / 'manifest.json'
 
 def find_summary(prefix):
     reports = ROOT / 'trajectory_analysis_output' / 'Results' / 'reports'

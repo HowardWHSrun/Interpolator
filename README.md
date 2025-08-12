@@ -3,8 +3,11 @@
 
 
 
-
-
+8/11
+1. if the speed from two points are both zeros. then it should be flat. 
+2. change the unit issue. the data for speed is meter per sec. so be mindful of that and the interpoltation would be different.
+3. try scipy python scripy optimize
+4. allow 0.5m/s error 
 
 
 8/7

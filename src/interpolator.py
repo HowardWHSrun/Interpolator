@@ -48,8 +48,9 @@ def load_data(path: str) -> pd.DataFrame:
     # Use full range (no 27,000 ft filter)
     df = df.copy()
     # Units
+    # Distance in meters, velocity already m/s
     df['dist_m'] = df['dist_from_start'] * 0.3048
-    df['speed_ms'] = df['speed'] * 0.44704
+    df['speed_ms'] = df['speed']
     return df
 
 

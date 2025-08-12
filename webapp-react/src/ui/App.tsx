@@ -93,9 +93,9 @@ export default function App() {
   const minPos = useMemo(() => rows.map(r => r.min_position_ft), [rows])
   const maxPos = useMemo(() => rows.map(r => r.max_position_ft), [rows])
   const likePos = useMemo(() => rows.map(r => r.likely_position_ft), [rows])
-  const minSpd = useMemo(() => rows.map(r => r.min_speed_mph), [rows])
-  const maxSpd = useMemo(() => rows.map(r => r.max_speed_mph), [rows])
-  const likeSpd = useMemo(() => rows.map(r => r.likely_speed_mph), [rows])
+  const minSpd = useMemo(() => rows.map(r => (Number(r.min_speed_mph) || 0) * 0.44704), [rows])
+  const maxSpd = useMemo(() => rows.map(r => (Number(r.max_speed_mph) || 0) * 0.44704), [rows])
+  const likeSpd = useMemo(() => rows.map(r => (Number(r.likely_speed_mph) || 0) * 0.44704), [rows])
 
   const distData = useMemo(() => ([
     { x: time, y: minPos, type: 'scattergl', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
@@ -193,9 +193,9 @@ export default function App() {
           </Grid>
           <Grid item xs={12} md={6}>
             <Paper variant="outlined" sx={{ p: 1 }}>
-              <Typography variant="subtitle1" sx={{ px: 1, py: .5, fontWeight: 600 }}>{dir} speed vs time (no reverse)</Typography>
+              <Typography variant="subtitle1" sx={{ px: 1, py: .5, fontWeight: 600 }}>{dir} velocity vs time (no reverse)</Typography>
               <Plot data={spdData as any}
-                layout={{ margin: { l: 50, r: 20, t: 10, b: 40 }, xaxis: { title: 'Time (s)' }, yaxis: { title: 'Speed (mph)' }, shapes: stopShapes as any }}
+                layout={{ margin: { l: 50, r: 20, t: 10, b: 40 }, xaxis: { title: 'Time (s)' }, yaxis: { title: 'Velocity (m/s)' }, shapes: stopShapes as any }}
                 config={{ responsive: true }}
                 style={{ width: '100%', height: 420 }}
               />

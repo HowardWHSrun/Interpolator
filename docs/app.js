@@ -198,6 +198,26 @@ async function buildManifest() {
   }
 }
 
+async function urlExists(url) {
+  try {
+    const res = await fetch(resolvePath(url), { method: 'GET' });
+    return res.ok;
+  } catch { return false; }
+}
+
+async function buildSpecForTrip(dirKey, tripId) {
+  if (!tripId) return null;
+  const base = '/trajectory_analysis_output/Results';
+  const pref = dirKey === 'inbound' ? 'Inbound_trip_' : 'Outbound_trip_';
+  const spec = {
+    summary: `${base}/reports/analysis_summary_${pref}${tripId}.json`,
+    stops: `${base}/reports/detected_stops_${pref}${tripId}.json`,
+    interpolated: `${base}/exported_data/interpolated_trajectories_${pref}${tripId}.csv`
+  };
+  if (await urlExists(spec.interpolated)) return spec;
+  return null;
+}
+
 function renderSegments(containerId, dirSpec, startIndex = 1, endIndex = 12) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
@@ -236,9 +256,9 @@ function renderSegments(containerId, dirSpec, startIndex = 1, endIndex = 12) {
       mini.addEventListener('click', () => {
         // clicking mini focuses the detail panel to this segment window
         const dirKey = containerId.includes('inbound') ? 'inbound' : 'outbound';
-        const minSpd = seg.map(r => r.min_speed_mph);
-        const maxSpd = seg.map(r => r.max_speed_mph);
-        const likeSpd = seg.map(r => r.likely_speed_mph);
+        const minSpd = seg.map(r => Number(r.min_speed_mph) * 0.44704);
+        const maxSpd = seg.map(r => Number(r.max_speed_mph) * 0.44704);
+        const likeSpd = seg.map(r => Number(r.likely_speed_mph) * 0.44704);
         const titleEl = document.getElementById(`detail-title-${dirKey}`);
         if (titleEl) titleEl.textContent = `${dirKey} segment ${String(key).padStart(3,'0')} detail`;
         Plotly.newPlot(`detail-distance-${dirKey}`, [
@@ -250,7 +270,7 @@ function renderSegments(containerId, dirSpec, startIndex = 1, endIndex = 12) {
           { x: t, y: minSpd, mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
           { x: t, y: maxSpd, mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: 'rgba(148,163,184,0.25)' },
           ensureTrace('Likely speed', t, likeSpd, { line: { color: '#111827', dash: 'dot', width: 2 } }),
-        ], layout('Speed detail', 'Time (s)', 'Speed (mph)'), {responsive: true});
+        ], layout('Speed detail', 'Time (s)', 'Speed (m/s)'), {responsive: true});
       });
     });
   });
@@ -267,9 +287,9 @@ async function renderDirection(dirKey, dirSpec) {
     const pmin = Number(r.min_position_ft);
     const pmax = Number(r.max_position_ft);
     const plike = Number(r.likely_position_ft);
-    const smin = Number(r.min_speed_mph);
-    const smax = Number(r.max_speed_mph);
-    const slike = Number(r.likely_speed_mph);
+    const smin = Number(r.min_speed_mph) * 0.44704; // mph → m/s
+    const smax = Number(r.max_speed_mph) * 0.44704; // mph → m/s
+    const slike = Number(r.likely_speed_mph) * 0.44704; // mph → m/s
     if (!Number.isFinite(t)) continue;
     // position series must be finite to render distance
     if (!Number.isFinite(pmin) || !Number.isFinite(pmax) || !Number.isFinite(plike)) continue;
@@ -295,17 +315,17 @@ async function renderDirection(dirKey, dirSpec) {
 
   // Distance chart (bands + likely)
   const hasDistBand = time.some((_, i) => (maxPos[i] - minPos[i]) > 0.5);
+  const minPosM = minPos.map(v => v * 0.3048);
+  const maxPosM = maxPos.map(v => v * 0.3048);
+  const likePosM = likePos.map(v => v * 0.3048);
   const distData = [
-    // Use canvas (scatter) for fill — scattergl fill can render inconsistently
-    { name: 'Feasible band', x: time, y: minPos, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
-    { name: 'Feasible band', x: time, y: maxPos, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasDistBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
-    // outlines to make narrow bands visible
-    // Use non-WebGL for outlines so rectangle-select reliably emits events
-    ensureTrace('Band min', time, minPos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Band max', time, maxPos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Likely', time, likePos, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
+    { name: 'Feasible band', x: time, y: minPosM, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
+    { name: 'Feasible band', x: time, y: maxPosM, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasDistBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
+    ensureTrace('Band min', time, minPosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
+    ensureTrace('Band max', time, maxPosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
+    ensureTrace('Likely', time, likePosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
   ];
-  const distLayout = layout(`${dirKey} distance vs time (no reverse)`, 'Time (s)', 'Distance (ft)');
+  const distLayout = layout(`${dirKey} distance vs time (no reverse)`, 'Time (s)', 'Distance (m)');
   distLayout.paper_bgcolor = '#ffffff';
   distLayout.plot_bgcolor = '#ffffff';
   distLayout.shapes = stopSpans.map(s => ({ type: 'rect', xref: 'x', yref: 'paper', y0: 0, y1: 1, x0: s.x0, x1: s.x1, fillcolor: s.fillcolor, line: { width: 0 } }));
@@ -333,7 +353,7 @@ async function renderDirection(dirKey, dirSpec) {
     ensureTrace('Band max', time, maxSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
     ensureTrace('Likely', time, likeSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
   ];
-  const spdLayout = layout(`${dirKey} speed vs time (no reverse)`, 'Time (s)', 'Speed (mph)');
+  const spdLayout = layout(`${dirKey} velocity vs time (no reverse)`, 'Time (s)', 'Velocity (m/s)');
   spdLayout.paper_bgcolor = '#ffffff';
   spdLayout.plot_bgcolor = '#ffffff';
   spdLayout.shapes = stopSpans.map(s => ({ type: 'rect', xref: 'x', yref: 'paper', y0: 0, y1: 1, x0: s.x0, x1: s.x1, fillcolor: s.fillcolor, line: { width: 0 } }));
@@ -373,7 +393,7 @@ async function renderDirection(dirKey, dirSpec) {
       ensureTrace('Band min', tSel, minSpdSel, { type: 'scattergl', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
       ensureTrace('Band max', tSel, maxSpdSel, { type: 'scattergl', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
       ensureTrace('Likely', tSel, likeSpdSel, { type: 'scattergl', line: { color: '#111827', dash: 'dot', width: 2 }, showlegend: false }),
-    ], layout('Speed detail', 'Time (s)', 'Speed (mph)'), { responsive: true, displaylogo: false });
+    ], layout('Velocity detail', 'Time (s)', 'Velocity (m/s)'), { responsive: true, displaylogo: false });
   }
 
   function attachSelectHandler(chartId) {
@@ -446,8 +466,10 @@ async function bootstrap() {
       const summary = await fetchJSON(spec.summary);
       document.getElementById('kpi-duration').textContent = `${summary.duration_minutes.toFixed(1)} min`;
       document.getElementById('kpi-distance').textContent = `${(summary.distance_ft/5280).toFixed(2)} mi`;
-      document.getElementById('kpi-avg').textContent = `${summary.speed_stats.avg_mph.toFixed(1)} mph`;
-      document.getElementById('kpi-max').textContent = `${summary.speed_stats.max_mph.toFixed(1)} mph`;
+      const avg_ms = Number(summary.speed_stats.avg_mph) * 0.44704;
+      const max_ms = Number(summary.speed_stats.max_mph) * 0.44704;
+      document.getElementById('kpi-avg').textContent = `${avg_ms.toFixed(2)} m/s`;
+      document.getElementById('kpi-max').textContent = `${max_ms.toFixed(2)} m/s`;
       document.getElementById('kpi-stops').textContent = (summary.stops_summary?.total_stops ?? 0);
     } catch {
       // leave placeholders
@@ -499,19 +521,15 @@ async function bootstrap() {
   if (selTrip) {
     selTrip.addEventListener('change', async () => {
       const dir = document.querySelector('input[name="dir"]:checked')?.value || 'inbound';
-      // Purge any previous overlay traces (legend group 'others') by redrawing the chart data except others
-      try {
-        const gd = document.getElementById(`distanceChart-${dir}`);
-        if (gd && gd.data) {
-          const keep = [];
-          for (let i = 0; i < gd.data.length; i++) {
-            const tr = gd.data[i];
-            if (tr.legendgroup !== 'others') keep.push(tr);
-          }
-          await Plotly.react(gd, keep, gd.layout);
-        }
-      } catch {}
       const tripId = selTrip.value || '';
+      // If we have precomputed interpolation for this trip, switch data sources entirely
+      const manifest = await buildManifest();
+      const fallbackSpec = manifest.trains[0][dir];
+      const customSpec = await buildSpecForTrip(dir, tripId);
+      const spec = customSpec || fallbackSpec;
+      await renderDirection(dir, spec);
+      await updateKpisAndLinks(spec);
+      // Add overlay of raw trips excluding current
       if (tripId) await overlayOtherTrips(dir, tripId);
     });
   }

@@ -49,19 +49,35 @@ class TrainTrajectoryInterpolator:
     """
 
     def __init__(self, csv_file='4_k_line_data_with_trip_id.csv', output_dir='trajectory_analysis_output'):
-        # Siemens S200 constraints
-        self.MAX_ACCEL_MPH_S = 3.0   # a+ (mph/s)
-        self.MAX_DECEL_MPH_S = 5.0   # b   (mph/s)
-        self.MAX_SPEED_MPH   = 60.0
+        # Siemens S200 constraints (interpret input speeds as m/s)
+        self.MAX_ACCEL_MS2 = 1.3   # m/s^2 (accelerating)
+        self.MAX_DECEL_MS2 = 2.2   # m/s^2 (braking)
+        self.MAX_SPEED_MPH = 60.0  # for reporting/limits (≈ 26.8224 m/s)
 
         # Conversions
-        self.MPH_TO_FPS = 1.46667
-        self.a  = self.MAX_ACCEL_MPH_S * self.MPH_TO_FPS   # ft/s^2 (accelerating)
-        self.b  = self.MAX_DECEL_MPH_S * self.MPH_TO_FPS   # ft/s^2 (braking)
-        self.V  = self.MAX_SPEED_MPH   * self.MPH_TO_FPS   # ft/s (|v| <= V)
+        self.MPH_TO_FPS = 1.46667      # mph → ft/s
+        self.MPH_TO_MPS = 0.44704      # mph → m/s
+        self.MPS_TO_MPH = 2.2369362921 # m/s → mph
+        self.MPS_TO_FPS = 3.28084      # m/s → ft/s
+
+        # Dynamics in feet-based frame
+        self.a  = self.MAX_ACCEL_MS2 * self.MPS_TO_FPS   # ft/s^2 (accelerating)
+        self.b  = self.MAX_DECEL_MS2 * self.MPS_TO_FPS   # ft/s^2 (braking)
+        self.V  = (self.MAX_SPEED_MPH * self.MPH_TO_FPS) # ft/s (|v| <= V)
+
+        # Endpoint speed tolerance (m/s) for feasible envelopes and likely path
+        self.endpoint_speed_tolerance_ms = 0.5
+        self.endpoint_speed_tolerance_fps = self.endpoint_speed_tolerance_ms * self.MPS_TO_FPS
 
         # Dirs + data
         self.output_dir = Path(output_dir)
+        # Clean and recreate outputs to avoid stale clutter
+        try:
+            if self.output_dir.exists():
+                import shutil
+                shutil.rmtree(self.output_dir)
+        except Exception:
+            pass
         self._setup_dirs()
         self._load(csv_file)
 
@@ -87,35 +103,24 @@ class TrainTrajectoryInterpolator:
         df = df.sort_values('timestamp').reset_index(drop=True)
         t0 = df['timestamp'].min()
         df['time_seconds'] = (df['timestamp'] - t0).dt.total_seconds()
-        df['speed_fps']    = df['speed'] * self.MPH_TO_FPS
+        # Input speed is in m/s; convert to ft/s for interpolation
+        df['speed_fps']    = df['speed'] * self.MPS_TO_FPS
         self.df = df
         print(f"Loaded {len(df)} rows; {df['timestamp'].min()} → {df['timestamp'].max()}")
 
     # ------------------------- Forward distances (allow v<0) ----------------- #
     def _fwd_min_dist(self, v1, t):
         """
-        Minimal displacement in time t from start, allowing reverse:
-        - If v1>0: brake at b to 0, then accelerate at a to -V and cruise.
-        - If v1<=0: accelerate at a toward -V and cruise.
+        Minimal displacement in time t from start, NO REVERSE:
+        - Brake at b to 0 as quickly as possible, then wait.
         """
         if t <= 0: return 0.0
-        if v1 > 0:
-            t_stop = v1 / self.b
-            s_stop = v1*t_stop - 0.5*self.b*t_stop*t_stop
-            if t <= t_stop:
-                return v1*t - 0.5*self.b*t*t
-            t_left = t - t_stop
-            t_to_negV = self.V / self.a
-            if t_left <= t_to_negV:
-                return s_stop - 0.5*self.a*t_left*t_left
-            s_to_negV = -0.5*self.a*t_to_negV*t_to_negV
-            return s_stop + s_to_negV + (-self.V)*(t_left - t_to_negV)
-        else:
-            t_to_negV = max(0.0, (-self.V - v1) / self.a)
-            if t <= t_to_negV:
-                return v1*t - 0.5*self.a*t*t
-            s_to_negV = v1*t_to_negV - 0.5*self.a*t_to_negV*t_to_negV
-            return s_to_negV + (-self.V)*(t - t_to_negV)
+        if v1 <= 0: return 0.0
+        t_stop = v1 / self.b
+        if t <= t_stop:
+            return v1*t - 0.5*self.b*t*t
+        # stopped, then wait at zero speed
+        return 0.5 * v1*v1 / self.b
 
     def _fwd_max_dist(self, v1, t):
         """Max displacement in time t from start: accelerate at a to +V then cruise."""
@@ -190,7 +195,8 @@ class TrainTrajectoryInterpolator:
         # 1) Normalize so distance increases
         sgn = 1.0 if d2 >= d1 else -1.0
         d1n, d2n = sgn * d1, sgn * d2
-        v1n, v2n = sgn * v1_fps, sgn * v2_fps
+        # In normalized frame, work with nonnegative velocity magnitudes
+        v1n, v2n = abs(v1_fps), abs(v2_fps)
 
         # time grid
         t = np.linspace(t1, t2, num_points)
@@ -218,17 +224,68 @@ class TrainTrajectoryInterpolator:
             x_lo_n[bad] = mid[bad]
             x_hi_n[bad] = mid[bad]
 
-        # 5) Instantaneous speed bounds
-        v_from_start_min = np.maximum(-self.V, v1n - self.b * tau)
-        v_from_start_max = np.minimum( self.V, v1n + self.a * tau)
-        v_to_end_min     = np.maximum(-self.V, v2n - self.a * (T - tau))
-        v_to_end_max     = np.minimum( self.V, v2n + self.b * (T - tau))
+        # 5) Instantaneous speed bounds (with endpoint tolerance)
+        tol = self.endpoint_speed_tolerance_fps
+        v_from_start_min = np.maximum(0.0, (v1n - tol) - self.b * tau)
+        v_from_start_max = np.minimum( self.V, (v1n + tol) + self.a * tau)
+        v_to_end_min     = np.maximum(0.0, (v2n - tol) - self.a * (T - tau))
+        v_to_end_max     = np.minimum( self.V, (v2n + tol) + self.b * (T - tau))
         v_lo_n = np.maximum(v_from_start_min, v_to_end_min)
         v_hi_n = np.minimum(v_from_start_max, v_to_end_max)
 
-        # likely speed (linear → clipped), likely position (integrate → clamp)
+        # likely speed: minimal-jerk profile within [v_lo_n, v_hi_n]
         v_like_n = (1 - tau/T) * v1n + (tau/T) * v2n
         v_like_n = np.clip(v_like_n, v_lo_n, v_hi_n)
+        try:
+            import numpy as _np
+            from scipy.optimize import minimize as _minimize
+            v0 = v_like_n.copy()
+            dt = float(T) / max(1, len(tau)-1)
+            dt3 = (dt if dt > 0 else 1.0) ** 3
+
+            def obj(v):
+                v = _np.asarray(v)
+                # jerk approx via third-order finite diff
+                if len(v) < 4:
+                    jcost = 0.0
+                else:
+                    j = (v[3:] - 3*v[2:-1] + 3*v[1:-2] - v[:-3]) / dt3
+                    jcost = _np.sum(j*j)
+                # endpoint soft penalties if beyond tolerance
+                e0 = max(0.0, abs(v[0] - v1n) - tol)
+                e1 = max(0.0, abs(v[-1] - v2n) - tol)
+                pcost = 1e4*(e0*e0 + e1*e1)
+                return jcost + pcost
+
+            bounds = list(zip(v_lo_n.tolist(), v_hi_n.tolist()))
+            res = _minimize(obj, v0, method='L-BFGS-B', bounds=bounds, options={'maxiter': 200})
+            if res.success and _np.all(_np.isfinite(res.x)):
+                v_like_n = res.x.astype(float)
+            else:
+                v_like_n = _np.clip(v0, v_lo_n, v_hi_n)
+
+            # Also compute smooth lower/upper envelopes by preferring bounds but minimizing jerk
+            def obj_pref(v, pref):
+                v = _np.asarray(v)
+                if len(v) < 4:
+                    jcost = 0.0
+                else:
+                    j = (v[3:] - 3*v[2:-1] + 3*v[1:-2] - v[:-3]) / dt3
+                    jcost = _np.sum(j*j)
+                pcost = 1e-3 * _np.sum((v - pref)**2)
+                return jcost + pcost
+
+            # Lower preference towards v_lo_n
+            res_lo = _minimize(lambda vv: obj_pref(vv, v_lo_n), v_lo_n, method='L-BFGS-B', bounds=bounds, options={'maxiter': 120})
+            v_min_smooth_n = _np.clip(res_lo.x if res_lo.success else v_lo_n, v_lo_n, v_hi_n)
+            # Upper preference towards v_hi_n
+            res_hi = _minimize(lambda vv: obj_pref(vv, v_hi_n), v_hi_n, method='L-BFGS-B', bounds=bounds, options={'maxiter': 120})
+            v_max_smooth_n = _np.clip(res_hi.x if res_hi.success else v_hi_n, v_lo_n, v_hi_n)
+        except Exception:
+            # Fallback to clipped linear if SciPy unavailable
+            v_like_n = np.clip(v_like_n, v_lo_n, v_hi_n)
+            v_min_smooth_n = v_lo_n.copy()
+            v_max_smooth_n = v_hi_n.copy()
         x_like_n = np.empty_like(tau)
         x_like_n[0] = d1n
         for i in range(1, len(tau)):
@@ -242,9 +299,12 @@ class TrainTrajectoryInterpolator:
         x_like = sgn * x_like_n
         x_min, x_max = np.minimum(x_min, x_max), np.maximum(x_min, x_max)
 
-        v_lo = (sgn * v_lo_n) / self.MPH_TO_FPS
-        v_hi = (sgn * v_hi_n) / self.MPH_TO_FPS
-        v_like = (sgn * v_like_n) / self.MPH_TO_FPS
+        # Report velocity magnitude (no reverse) in mph-equivalent arrays for schema
+        v_lo = np.maximum(v_lo_n, 0.0) / self.MPH_TO_FPS
+        v_hi = np.maximum(v_hi_n, 0.0) / self.MPH_TO_FPS
+        v_like = np.maximum(v_like_n, 0.0) / self.MPH_TO_FPS
+        v_lo_smooth = np.maximum(v_min_smooth_n, 0.0) / self.MPH_TO_FPS
+        v_hi_smooth = np.maximum(v_max_smooth_n, 0.0) / self.MPH_TO_FPS
         v_min = np.minimum(v_lo, v_hi)
         v_max = np.maximum(v_lo, v_hi)
 
@@ -253,6 +313,8 @@ class TrainTrajectoryInterpolator:
             'min_speed': v_min,
             'max_speed': v_max,
             'likely_speed': v_like,
+            'min_speed_smooth': v_lo_smooth,
+            'max_speed_smooth': v_hi_smooth,
             'min_position': x_min,
             'max_position': x_max,
             'likely_position': x_like
@@ -269,41 +331,49 @@ class TrainTrajectoryInterpolator:
             fontweight='bold'
         )
 
-        # Distance vs time (lens)
-        ax1.fill_between(interp['time'], interp['min_position'], interp['max_position'],
+        # Distance vs time (lens) — convert ft → m for display
+        min_pos_m = interp['min_position'] * 0.3048
+        max_pos_m = interp['max_position'] * 0.3048
+        like_pos_m = interp['likely_position'] * 0.3048
+        ax1.fill_between(interp['time'], min_pos_m, max_pos_m,
                          alpha=0.28, color='lightgray', rasterized=True)
-        ax1.plot(interp['time'], interp['min_position'],  lw=2, label='Min feasible')
-        ax1.plot(interp['time'], interp['max_position'],  lw=2, label='Max feasible')
-        ax1.plot(interp['time'], interp['likely_position'],'k--', lw=2, alpha=0.85, label='Likely')
-        ax1.scatter([r1[tcol], r2[tcol]], [r1['dist_from_start'], r2['dist_from_start']],
+        ax1.plot(interp['time'], min_pos_m,  lw=2, label='Min feasible')
+        ax1.plot(interp['time'], max_pos_m,  lw=2, label='Max feasible')
+        ax1.plot(interp['time'], like_pos_m,'k--', lw=2, alpha=0.85, label='Likely')
+        ax1.scatter([r1[tcol], r2[tcol]], [r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048],
                     s=80, color='crimson', label='GPS', zorder=5, rasterized=True)
-        ax1.set_ylabel('Distance (ft)')
+        ax1.set_ylabel('Distance (m)')
         ax1.set_title('Distance vs Time (lens; reverse allowed)')
         ax1.legend(loc='upper left')
         t0, t1 = float(interp['time'][0]), float(interp['time'][-1])
         dx = max(1e-6, t1 - t0)
         ax1.set_xlim(t0 - 0.03*dx, t1 + 0.03*dx)
-        ylo = min(interp['min_position'].min(), r1['dist_from_start'], r2['dist_from_start'])
-        yhi = max(interp['max_position'].max(), r1['dist_from_start'], r2['dist_from_start'])
+        ylo = min(min_pos_m.min(), r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048)
+        yhi = max(max_pos_m.max(), r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048)
         dy = max(1.0, yhi - ylo)
         ax1.set_ylim(ylo - 0.05*dy, yhi + 0.05*dy)
 
         # Speed vs time
-        ax2.fill_between(interp['time'], interp['min_speed'], interp['max_speed'],
+        # Convert mph arrays to m/s for plotting
+        min_ms = interp['min_speed'] * self.MPH_TO_MPS
+        max_ms = interp['max_speed'] * self.MPH_TO_MPS
+        like_ms = interp['likely_speed'] * self.MPH_TO_MPS
+        ax2.fill_between(interp['time'], min_ms, max_ms,
                          alpha=0.28, color='lightgray', rasterized=True)
-        ax2.plot(interp['time'], interp['min_speed'],  lw=2, label='Min feasible')
-        ax2.plot(interp['time'], interp['max_speed'],  lw=2, label='Max feasible')
-        ax2.plot(interp['time'], interp['likely_speed'],'k--', lw=2, alpha=0.85, label='Likely')
+        ax2.plot(interp['time'], min_ms,  lw=2, label='Min feasible')
+        ax2.plot(interp['time'], max_ms,  lw=2, label='Max feasible')
+        ax2.plot(interp['time'], like_ms,'k--', lw=2, alpha=0.85, label='Likely')
+        # r1['speed'] and r2['speed'] are m/s already
         ax2.scatter([r1[tcol], r2[tcol]], [r1['speed'], r2['speed']],
                     s=80, color='crimson', label='GPS', zorder=5, rasterized=True)
-        ax2.axhline(self.MAX_SPEED_MPH, ls=':', lw=1, alpha=0.7, label='Max Speed')
+        ax2.axhline(self.MAX_SPEED_MPH * self.MPH_TO_MPS, ls=':', lw=1, alpha=0.7, label='Max Velocity')
         ax2.set_xlabel('Time (s)')  # trip-relative (starts at 0)
-        ax2.set_ylabel('Speed (mph)')
-        ax2.set_title('Speed vs Time (reverse allowed)')
+        ax2.set_ylabel('Velocity (m/s)')
+        ax2.set_title('Velocity vs Time (reverse allowed)')
         ax2.legend(loc='upper right')
         ax2.set_xlim(t0 - 0.03*dx, t1 + 0.03*dx)
-        y2lo = min(interp['min_speed'].min(), r1['speed'], r2['speed'])
-        y2hi = max(interp['max_speed'].max(), r1['speed'], r2['speed'], self.MAX_SPEED_MPH)
+        y2lo = min(min_ms.min(), r1['speed'], r2['speed'])
+        y2hi = max(max_ms.max(), r1['speed'], r2['speed'], self.MAX_SPEED_MPH * self.MPH_TO_MPS)
         dy2 = max(0.5, y2hi - y2lo)
         ax2.set_ylim(y2lo - 0.06*dy2, y2hi + 0.06*dy2)
 
@@ -323,29 +393,40 @@ class TrainTrajectoryInterpolator:
 
         # Distance vs time — overlapping semi-transparent bands (darker where many)
         for p in interps:
-            ax1.fill_between(p['time'], p['min_position'], p['max_position'],
+            p_min_m = p['min_position'] * 0.3048
+            p_max_m = p['max_position'] * 0.3048
+            p_like_m = p['likely_position'] * 0.3048
+            ax1.fill_between(p['time'], p_min_m, p_max_m,
                              alpha=0.22, color='gray', rasterized=True)
-            ax1.plot(p['time'], p['likely_position'], '-', lw=1.1, alpha=0.80,
+            ax1.plot(p['time'], p_like_m, '-', lw=1.1, alpha=0.80,
                      color='black', rasterized=True)
-        ax1.scatter(trip_df[tcol], trip_df['dist_from_start'], s=10, alpha=0.65,
+        ax1.scatter(trip_df[tcol], trip_df['dist_from_start']*0.3048, s=10, alpha=0.65,
                     label='GPS', rasterized=True)
         ax1.set_xlabel('Time (s)')  # starts at 0 for the trip
-        ax1.set_ylabel('Distance (ft)')
+        ax1.set_ylabel('Distance (m)')
         ax1.set_title('Distance vs Time (lens bands; reverse allowed; overlap → darker)')
         ax1.legend(loc='upper left')
 
         # Speed vs time
         for p in interps:
-            ax2.fill_between(p['time'], p['min_speed'], p['max_speed'],
+            # Convert mph arrays to m/s for plotting
+            p_min_ms = p['min_speed'] * self.MPH_TO_MPS
+            p_max_ms = p['max_speed'] * self.MPH_TO_MPS
+            p_like_ms = p['likely_speed'] * self.MPH_TO_MPS
+            # Prefer smooth envelopes if present
+            p_min_s_ms = (p.get('min_speed_smooth', None) or p['min_speed']) * self.MPH_TO_MPS
+            p_max_s_ms = (p.get('max_speed_smooth', None) or p['max_speed']) * self.MPH_TO_MPS
+            ax2.fill_between(p['time'], p_min_s_ms, p_max_s_ms,
                              alpha=0.22, color='gray', rasterized=True)
-            ax2.plot(p['time'], p['likely_speed'], '-', lw=1.1, alpha=0.80,
+            ax2.plot(p['time'], p_like_ms, '-', lw=1.1, alpha=0.80,
                      color='black', rasterized=True)
+        # trip_df['speed'] is m/s
         ax2.scatter(trip_df[tcol], trip_df['speed'], s=10, alpha=0.65,
                     label='GPS', rasterized=True)
-        ax2.axhline(self.MAX_SPEED_MPH, ls='--', lw=1, alpha=0.6, label='Max Speed')
+        ax2.axhline(self.MAX_SPEED_MPH * self.MPH_TO_MPS, ls='--', lw=1, alpha=0.6, label='Max Velocity')
         ax2.set_xlabel('Time (s)')
-        ax2.set_ylabel('Speed (mph)')
-        ax2.set_title('Speed vs Time (feasible bands)')
+        ax2.set_ylabel('Velocity (m/s)')
+        ax2.set_title('Velocity vs Time (feasible bands)')
         ax2.legend(loc='upper right')
 
         out = self.dirs['overview'] / filename
@@ -364,11 +445,15 @@ class TrainTrajectoryInterpolator:
             'start_position_ft': float(r1['dist_from_start']),
             'end_position_ft':   float(r2['dist_from_start']),
             'distance_traveled_ft': float(r2['dist_from_start'] - r1['dist_from_start']),
-            'start_speed_mph': float(r1['speed']),
-            'end_speed_mph':   float(r2['speed']),
+            'start_speed_mph': float(r1['speed'] * self.MPS_TO_MPH),
+            'end_speed_mph':   float(r2['speed'] * self.MPS_TO_MPH),
             'min_possible_speed_mph': float(np.min(interp['min_speed'])),
             'max_possible_speed_mph': float(np.max(interp['max_speed'])),
             'avg_likely_speed_mph':   float(np.mean(interp['likely_speed'])),
+            # Also report in m/s for clarity
+            'min_possible_velocity_ms': float(np.min(interp['min_speed']) * self.MPH_TO_MPS),
+            'max_possible_velocity_ms': float(np.max(interp['max_speed']) * self.MPH_TO_MPS),
+            'avg_likely_velocity_ms':   float(np.mean(interp['likely_speed']) * self.MPH_TO_MPS),
             'max_speed_uncertainty_mph': float(np.max(interp['max_speed'] - interp['min_speed'])),
             'vehicle_id': int(r1['vehicle_id']) if 'vehicle_id' in data.columns and pd.notna(r1['vehicle_id']) else None,
             'trip_id':    str(r1['trip_id'])    if 'trip_id'    in data.columns and pd.notna(r1['trip_id'])    else None,
@@ -385,14 +470,21 @@ class TrainTrajectoryInterpolator:
             'duration_minutes': float((data['t_rel'].max() - data['t_rel'].min())/60.0),
             'distance_ft': float(data['dist_from_start'].max() - data['dist_from_start'].min()),
             'speed_stats': {
-                'avg_mph': float(data['speed'].mean()),
-                'max_mph': float(data['speed'].max()),
-                'min_mph': float(data['speed'].min()),
-                'std_mph': float(data['speed'].std())
+                # Input speeds are m/s; convert to mph for reporting
+                'avg_mph': float((data['speed'] * self.MPS_TO_MPH).mean()),
+                'max_mph': float((data['speed'] * self.MPS_TO_MPH).max()),
+                'min_mph': float((data['speed'] * self.MPS_TO_MPH).min()),
+                'std_mph': float((data['speed'] * self.MPS_TO_MPH).std())
+            },
+            'velocity_stats_ms': {
+                'avg_ms': float(data['speed'].mean()),
+                'max_ms': float(data['speed'].max()),
+                'min_ms': float(data['speed'].min()),
+                'std_ms': float(data['speed'].std())
             },
             'constraints': {
-                'a_mph_s': self.MAX_ACCEL_MPH_S,
-                'b_mph_s': self.MAX_DECEL_MPH_S,
+                'a_mph_s': self.MAX_ACCEL_MS2 * self.MPS_TO_MPH,
+                'b_mph_s': self.MAX_DECEL_MS2 * self.MPS_TO_MPH,
                 'vmax_mph': self.MAX_SPEED_MPH,
                 'reverse_allowed': True
             }
@@ -410,9 +502,14 @@ class TrainTrajectoryInterpolator:
                 rows.append({
                     'segment': si,
                     'time_s': float(p['time'][k]),
+                    # export consistent with existing schema: mph
                     'min_speed_mph': float(p['min_speed'][k]),
                     'max_speed_mph': float(p['max_speed'][k]),
                     'likely_speed_mph': float(p['likely_speed'][k]),
+                    # explicit velocity in SI units (m/s)
+                    'min_velocity_ms': float(p['min_speed'][k] * self.MPH_TO_MPS),
+                    'max_velocity_ms': float(p['max_speed'][k] * self.MPH_TO_MPS),
+                    'likely_velocity_ms': float(p['likely_speed'][k] * self.MPH_TO_MPS),
                     'min_position_ft': float(p['min_position'][k]),
                     'max_position_ft': float(p['max_position'][k]),
                     'likely_position_ft': float(p['likely_position'][k]),
@@ -499,7 +596,7 @@ if __name__ == "__main__":
 
     ti = TrainTrajectoryInterpolator(
         csv_file='4_k_line_data_with_trip_id.csv',
-        output_dir='trajectory_analysis_output'
+        output_dir='trajectory_analysis_output/Results'
     )
 
     inbound_val, outbound_val = ti._guess_direction_values()
