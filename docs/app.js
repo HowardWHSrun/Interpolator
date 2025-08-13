@@ -47,7 +47,21 @@ function layout(title, xLabel, yLabel) {
 let RAW_TRIPS_CACHE = null;
 async function fetchRawTrips() {
   if (RAW_TRIPS_CACHE) return RAW_TRIPS_CACHE;
-  const text = await (await fetch(resolvePath('/4_k_line_data_with_trip_id.csv'))).text();
+  // Try multiple likely CSV locations to be robust across hosting setups
+  const candidates = [
+    '/data/4_k_line_data_with_trip_id.csv',
+    '/4_k_line_data_with_trip_id.csv',
+    '4_k_line_data_with_trip_id.csv'
+  ];
+  let text = '';
+  let lastErr = null;
+  for (const p of candidates) {
+    try {
+      const res = await fetch(resolvePath(p));
+      if (res.ok) { text = await res.text(); break; }
+    } catch (e) { lastErr = e; }
+  }
+  if (!text) throw lastErr || new Error('Could not locate 4_k_line_data_with_trip_id.csv');
   const rows = await new Promise((resolve, reject) => {
     Papa.parse(text, { header: true, dynamicTyping: true, complete: r => resolve(r.data), error: reject, skipEmptyLines: true });
   });
@@ -139,10 +153,7 @@ async function populateTripSelect(dirKey) {
       if (!byDate.has(t.dateKey)) byDate.set(t.dateKey, []);
       byDate.get(t.dateKey).push(t);
     }
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'None (no overlay)';
-    sel.appendChild(placeholder);
+    // No placeholder option
     // sort dates descending; trips by start time
     const dates = Array.from(byDate.keys()).sort((a,b)=> (a<b?1:-1));
     for (const d of dates) {
@@ -306,24 +317,19 @@ async function renderDirection(dirKey, dirSpec) {
   // Overlay stop windows if available
   let stopSpans = [];
   try {
-    const stops = await fetchJSON(dirSpec.stops);
-    stopSpans = (stops || []).map(s => ({
-      x0: s.t_start_s, x1: s.t_end_s,
-      fillcolor: s.type === 'station' ? 'rgba(251, 146, 60, 0.15)' : 'rgba(125, 211, 252, 0.15)'
-    }));
+    if (dirSpec.stops && await urlExists(dirSpec.stops)) {
+      const stops = await fetchJSON(dirSpec.stops);
+      stopSpans = (stops || []).map(s => ({
+        x0: s.t_start_s, x1: s.t_end_s,
+        fillcolor: s.type === 'station' ? 'rgba(251, 146, 60, 0.15)' : 'rgba(125, 211, 252, 0.15)'
+      }));
+    }
   } catch {}
 
-  // Distance chart (bands + likely)
-  const hasDistBand = time.some((_, i) => (maxPos[i] - minPos[i]) > 0.5);
-  const minPosM = minPos.map(v => v * 0.3048);
-  const maxPosM = maxPos.map(v => v * 0.3048);
+  // Distance chart: only likely trajectory
   const likePosM = likePos.map(v => v * 0.3048);
   const distData = [
-    { name: 'Feasible band', x: time, y: minPosM, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
-    { name: 'Feasible band', x: time, y: maxPosM, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasDistBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
-    ensureTrace('Band min', time, minPosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Band max', time, maxPosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Likely', time, likePosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
+    ensureTrace('Likely', time, likePosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', width: 2 }, showlegend: true })
   ];
   const distLayout = layout(`${dirKey} distance vs time (no reverse)`, 'Time (s)', 'Distance (m)');
   distLayout.paper_bgcolor = '#ffffff';
@@ -336,22 +342,23 @@ async function renderDirection(dirKey, dirSpec) {
   distLayout.hovermode = 'x unified';
   distLayout.dragmode = 'select';
   Plotly.newPlot(`distanceChart-${dirKey}`, distData, distLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
-  // Apply overlay for selected trip
-  const tripSel = document.getElementById('tripIdSelect');
-  if (tripSel && tripSel.value) {
-    overlayOtherTrips(dirKey, tripSel.value);
-  }
+  // Overlay original points on main charts
+  try {
+    const tripSel = document.getElementById('tripIdSelect');
+    const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
+    if (selectedId) {
+      const trips = await fetchRawTrips();
+      const t = trips.find(r => r.dir === dirKey.toLowerCase() && String(r.trip_id) === String(selectedId));
+      if (t) {
+        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: t.dist.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
+        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
+      }
+    }
+  } catch {}
 
-  // Speed chart (bands + likely)
-  const hasSpdBand = time.length > 0 && maxSpd.length === time.length && minSpd.length === time.length && time.some((_, i) => Number.isFinite(maxSpd[i]) && Number.isFinite(minSpd[i]) && (maxSpd[i] - minSpd[i]) > 0.1);
+  // Speed chart: only likely
   const spdData = [
-    { name: 'Feasible band', x: time, y: minSpd, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
-    { name: 'Feasible band', x: time, y: maxSpd, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: hasSpdBand ? 'rgba(100,116,139,0.40)' : 'rgba(100,116,139,0.20)', showlegend: true },
-    // outlines to make narrow bands visible
-    // Use non-WebGL for outlines so rectangle-select reliably emits events
-    ensureTrace('Band min', time, minSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Band max', time, maxSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') || '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-    ensureTrace('Likely', time, likeSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', dash: 'dot', width: 2 }, showlegend: true }),
+    ensureTrace('Likely', time, likeSpd, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', width: 2 }, showlegend: true })
   ];
   const spdLayout = layout(`${dirKey} velocity vs time (no reverse)`, 'Time (s)', 'Velocity (m/s)');
   spdLayout.paper_bgcolor = '#ffffff';
@@ -372,28 +379,46 @@ async function renderDirection(dirKey, dirSpec) {
 
   // No segment grid rendering (removed for cleaner UI)
 
-  // Rectangle select on overview → render detail charts below without zooming overview
-  function renderDetail(dir, tSel, minPosSel, maxPosSel, likePosSel, minSpdSel, maxSpdSel, likeSpdSel) {
+  // Rectangle select on overview → render detail charts (likely-only)
+  async function renderDetail(dir, tSel, minPosSel, maxPosSel, likePosSel, minSpdSel, maxSpdSel, likeSpdSel) {
     const titleEl = document.getElementById(`detail-title-${dir}`);
     if (titleEl && tSel.length) {
       const t0 = tSel[0].toFixed(1), t1 = tSel[tSel.length - 1].toFixed(1);
       titleEl.textContent = `${dir} detail ${t0}–${t1} s`;
     }
-    Plotly.newPlot(`detail-distance-${dir}`, [
-      { name: 'Feasible band', x: tSel, y: minPosSel, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
-      { name: 'Feasible band', x: tSel, y: maxPosSel, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: 'rgba(100,116,139,0.35)', showlegend: false },
-      ensureTrace('Band min', tSel, minPosSel, { type: 'scattergl', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-      ensureTrace('Band max', tSel, maxPosSel, { type: 'scattergl', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-      ensureTrace('Likely', tSel, likePosSel, { type: 'scattergl', line: { color: '#111827', dash: 'dot', width: 2 }, showlegend: false }),
-    ], layout('Distance detail', 'Time (s)', 'Distance (ft)'), { responsive: true, displaylogo: false });
+    const distSeries = [
+      ensureTrace('Likely', tSel, likePosSel, { type: 'scattergl', line: { color: '#111827', width: 2 }, showlegend: false })
+    ];
+    try {
+      const tripSel = document.getElementById('tripIdSelect');
+      const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
+      if (selectedId) {
+        const trips = await fetchRawTrips();
+        const tr = trips.find(r => r.dir === dir && String(r.trip_id) === String(selectedId));
+        if (tr) {
+          const idx = tr.t_rel.map((t, i) => [t, i]).filter(([t]) => t >= tSel[0] && t <= tSel[tSel.length-1]).map(([,i]) => i);
+          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => tr.dist[i]*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
+        }
+      }
+    } catch {}
+    Plotly.newPlot(`detail-distance-${dir}`, distSeries, layout('Distance detail', 'Time (s)', 'Distance (ft)'), { responsive: true, displaylogo: false });
 
-    Plotly.newPlot(`detail-speed-${dir}`, [
-      { name: 'Feasible band', x: tSel, y: minSpdSel, type: 'scatter', mode: 'lines', line: { width: 0 }, hoverinfo: 'skip', showlegend: false },
-      { name: 'Feasible band', x: tSel, y: maxSpdSel, type: 'scatter', mode: 'lines', line: { width: 0 }, fill: 'tonexty', fillcolor: 'rgba(100,116,139,0.35)', showlegend: false },
-      ensureTrace('Band min', tSel, minSpdSel, { type: 'scattergl', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-      ensureTrace('Band max', tSel, maxSpdSel, { type: 'scattergl', line: { color: '#94a3b8', width: 1 }, hoverinfo: 'skip', showlegend: false }),
-      ensureTrace('Likely', tSel, likeSpdSel, { type: 'scattergl', line: { color: '#111827', dash: 'dot', width: 2 }, showlegend: false }),
-    ], layout('Velocity detail', 'Time (s)', 'Velocity (m/s)'), { responsive: true, displaylogo: false });
+    const spdSeries = [
+      ensureTrace('Likely', tSel, likeSpdSel, { type: 'scattergl', line: { color: '#111827', width: 2 }, showlegend: false })
+    ];
+    try {
+      const tripSel = document.getElementById('tripIdSelect');
+      const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
+      if (selectedId) {
+        const trips = await fetchRawTrips();
+        const tr = trips.find(r => r.dir === dir && String(r.trip_id) === String(selectedId));
+        if (tr) {
+          const idx = tr.t_rel.map((t, i) => [t, i]).filter(([t]) => t >= tSel[0] && t <= tSel[tSel.length-1]).map(([,i]) => i);
+          spdSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => tr.spd[i]), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
+        }
+      }
+    } catch {}
+    Plotly.newPlot(`detail-speed-${dir}`, spdSeries, layout('Velocity detail', 'Time (s)', 'Velocity (m/s)'), { responsive: true, displaylogo: false });
   }
 
   function attachSelectHandler(chartId) {
@@ -516,21 +541,19 @@ async function bootstrap() {
     });
   });
 
-  // Overlay change: re-render overlays on selection change without redrawing bands
+  // Trip selection change: switch dataset to selected trip if available
   const selTrip = document.getElementById('tripIdSelect');
   if (selTrip) {
     selTrip.addEventListener('change', async () => {
       const dir = document.querySelector('input[name="dir"]:checked')?.value || 'inbound';
-      const tripId = selTrip.value || '';
+      const tripId = selTrip.value;
       // If we have precomputed interpolation for this trip, switch data sources entirely
       const manifest = await buildManifest();
       const fallbackSpec = manifest.trains[0][dir];
-      const customSpec = await buildSpecForTrip(dir, tripId);
+      const customSpec = tripId ? await buildSpecForTrip(dir, tripId) : null;
       const spec = customSpec || fallbackSpec;
       await renderDirection(dir, spec);
       await updateKpisAndLinks(spec);
-      // Add overlay of raw trips excluding current
-      if (tripId) await overlayOtherTrips(dir, tripId);
     });
   }
   await loadTrain(0);

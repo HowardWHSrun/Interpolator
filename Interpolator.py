@@ -369,8 +369,8 @@ class TrainTrajectoryInterpolator:
         T = t2 - t1
         if T <= 0:
             return None
-        # No reverse allowed: positive direction and nonnegative speeds
-        sgn = 1.0
+        # Preserve travel direction: sign by distance delta
+        sgn = 1.0 if d2 >= d1 else -1.0
         t = np.linspace(t1, t2, num_points)
         tau = t - t1
         v1_mag = max(v1_fps, 0.0)
@@ -385,7 +385,7 @@ class TrainTrajectoryInterpolator:
         def integrate_with_a(a_val: float):
             v_mag = v_base_mag + a_val * g
             v_mag = np.clip(v_mag, 0.0, self.V)  # enforce 0 <= v <= Vmax (ft/s)
-            v_signed = v_mag
+            v_signed = sgn * v_mag
             # integrate numerically
             x = np.empty_like(tau)
             x[0] = d1
@@ -801,7 +801,7 @@ class TrainTrajectoryInterpolator:
         trip['t_rel'] = trip['time_seconds'] - t0
         return (best, trip)
 
-    def analyze_trip_by_id(self, trip_id: str, label_prefix: str | None = None, segments_to_plot: int | None = None):
+    def analyze_trip_by_id(self, trip_id: str, label_prefix: str | None = None, segments_to_plot: int | None = None, generate_plots: bool = True):
         """Analyze a specific trip by exact trip_id, generating all PNGs and CSVs."""
         if 'trip_id' not in self.df.columns:
             print("[ERROR] CSV has no 'trip_id' column.")
@@ -831,29 +831,31 @@ class TrainTrajectoryInterpolator:
             if p:
                 interps.append(p)
                 seg_reports.append(self.generate_segment_report(i, trip, p, tcol='t_rel'))
-                if segments_to_plot is None or i < segments_to_plot:
+                if generate_plots and (segments_to_plot is None or i < segments_to_plot):
                     self.plot_segment_detail(i, trip, p, tcol='t_rel', save=True, label_prefix=f"{lp} ")
-        self.plot_full_trip_overview_with_bands(
-            trip, interps,
-            title=f"{lp} Full Trip Overview — nonlinear interpolation",
-            filename=f"{lp.lower()}_full_trip_overview.png",
-            tcol='t_rel'
-        )
+        if generate_plots:
+            self.plot_full_trip_overview_with_bands(
+                trip, interps,
+                title=f"{lp} Full Trip Overview — nonlinear interpolation",
+                filename=f"{lp.lower()}_full_trip_overview.png",
+                tcol='t_rel'
+            )
         # Also produce linear-velocity overview for the same trip
-        interps_alt = []
-        for j in range(len(trip)-1):
-            alt = self.calculate_pure_linear_segment(
-                trip.iloc[j]['t_rel'], trip.iloc[j+1]['t_rel'],
-                trip.iloc[j]['dist_from_start'], trip.iloc[j+1]['dist_from_start'],
-                trip.iloc[j]['speed_fps'], trip.iloc[j+1]['speed_fps'], num_points=120)
-            if alt:
-                interps_alt.append(alt)
-        self.plot_full_trip_overview_linear(
-            trip, interps_alt,
-            title=f"{lp} Full Trip Overview — linear interpolation",
-            filename=f"{lp.lower()}_full_trip_overview_linear.png",
-            tcol='t_rel'
-        )
+        if generate_plots:
+            interps_alt = []
+            for j in range(len(trip)-1):
+                alt = self.calculate_pure_linear_segment(
+                    trip.iloc[j]['t_rel'], trip.iloc[j+1]['t_rel'],
+                    trip.iloc[j]['dist_from_start'], trip.iloc[j+1]['dist_from_start'],
+                    trip.iloc[j]['speed_fps'], trip.iloc[j+1]['speed_fps'], num_points=120)
+                if alt:
+                    interps_alt.append(alt)
+            self.plot_full_trip_overview_linear(
+                trip, interps_alt,
+                title=f"{lp} Full Trip Overview — linear interpolation",
+                filename=f"{lp.lower()}_full_trip_overview_linear.png",
+                tcol='t_rel'
+            )
         self.create_summary_report(trip, interps, seg_reports, label=label)
         self.export_all_data(trip, interps, label=label)
         return trip, interps, seg_reports
@@ -907,6 +909,25 @@ class TrainTrajectoryInterpolator:
         self.export_all_data(data, interps, label=label)
         return data, interps, seg_reports
 
+    # ----------------------- Batch: analyze all trips ------------------------ #
+    def analyze_all_trips(self, segments_to_plot: int | None = 0, generate_plots: bool = False):
+        """Interpolate every trip_id present in the CSV and export per-trip CSV + summary.
+        By default, skips PNG generation for speed; set generate_plots=True to also save figures.
+        """
+        if 'trip_id' not in self.df.columns:
+            print("[ERROR] CSV has no 'trip_id' column.")
+            return
+        trip_ids = self.df['trip_id'].dropna().astype(str).unique().tolist()
+        print(f"Found {len(trip_ids)} trips. Interpolating all…")
+        done = 0
+        for tid in trip_ids:
+            try:
+                self.analyze_trip_by_id(tid, segments_to_plot=segments_to_plot, generate_plots=generate_plots)
+                done += 1
+            except Exception as e:
+                print(f"[WARN] Failed trip_id={tid}: {e}")
+        print(f"Completed {done}/{len(trip_ids)} trips. Outputs in {self.output_dir}.")
+
 # =================================== MAIN ================================== #
 if __name__ == "__main__":
     print("="*70)
@@ -917,6 +938,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--trip-id', dest='trip_id', default=None, help='Analyze only this exact trip_id')
+    parser.add_argument('--all-trips', dest='all_trips', action='store_true', help='Analyze all trips in the CSV (no plots by default)')
+    parser.add_argument('--plots', dest='plots', action='store_true', help='When analyzing many trips, also generate PNG plots')
     parser.add_argument('--csv', dest='csv', default='4_k_line_data_with_trip_id.csv')
     args = parser.parse_args()
 
@@ -925,7 +948,9 @@ if __name__ == "__main__":
         output_dir='trajectory_analysis_output/Results'
     )
 
-    if args.trip_id:
+    if args.all_trips:
+        ti.analyze_all_trips(segments_to_plot=0, generate_plots=bool(args.plots))
+    elif args.trip_id:
         ti.analyze_trip_by_id(args.trip_id, segments_to_plot=None)
     else:
         inbound_val, outbound_val = ti._guess_direction_values()
