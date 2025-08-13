@@ -308,11 +308,13 @@ async function renderDirection(dirKey, dirSpec) {
   // Overlay stop windows if available
   let stopSpans = [];
   try {
-    const stops = await fetchJSON(dirSpec.stops);
-    stopSpans = (stops || []).map(s => ({
-      x0: s.t_start_s, x1: s.t_end_s,
-      fillcolor: s.type === 'station' ? 'rgba(251, 146, 60, 0.15)' : 'rgba(125, 211, 252, 0.15)'
-    }));
+    if (dirSpec.stops) {
+      const stops = await fetchJSON(dirSpec.stops);
+      stopSpans = (stops || []).map(s => ({
+        x0: s.t_start_s, x1: s.t_end_s,
+        fillcolor: s.type === 'station' ? 'rgba(251, 146, 60, 0.15)' : 'rgba(125, 211, 252, 0.15)'
+      }));
+    }
   } catch {}
 
   // Distance chart (bands + likely)
@@ -483,10 +485,22 @@ async function bootstrap() {
     document.getElementById(`tab-${dir}`).classList.add('active');
   }
 
+  async function pickDefaultDir(man) {
+    const inboundSpec = man.trains[0]?.inbound;
+    const outboundSpec = man.trains[0]?.outbound;
+    const inboundOk = inboundSpec && inboundSpec.interpolated && await urlExists(inboundSpec.interpolated);
+    const outboundOk = outboundSpec && outboundSpec.interpolated && await urlExists(outboundSpec.interpolated);
+    if (outboundOk && !inboundOk) return 'outbound';
+    if (inboundOk) return 'inbound';
+    return 'outbound';
+  }
+
   async function loadTrain(idx) {
     const t = manifest.trains[idx];
-    // render currently selected direction only for performance
-    const selected = document.querySelector('input[name="dir"]:checked')?.value || 'inbound';
+    // pick a default dir that actually has data
+    let selected = document.querySelector('input[name="dir"]:checked')?.value || await pickDefaultDir(manifest);
+    const radio = document.querySelector(`input[name="dir"][value="${selected}"]`);
+    if (radio) radio.checked = true;
     setActiveSection(selected);
     await populateTripSelect(selected);
     await renderDirection(selected, t[selected]);
