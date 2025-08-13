@@ -281,6 +281,14 @@ function renderSegments(containerId, dirSpec, startIndex = 1, endIndex = 12) {
 }
 
 async function renderDirection(dirKey, dirSpec) {
+  // Validate spec and data availability
+  if (!dirSpec || !dirSpec.interpolated || !(await urlExists(dirSpec.interpolated))) {
+    const distEl = document.getElementById(`distanceChart-${dirKey}`);
+    const spdEl = document.getElementById(`speedChart-${dirKey}`);
+    if (distEl) distEl.innerHTML = '<div style="padding:12px;color:#6b7280">No interpolated data for this trip. Select another trip or switch direction.</div>';
+    if (spdEl) spdEl.innerHTML = '';
+    return;
+  }
   // Load interpolated CSV for distance/time bands and likely curve
   const rows = await fetchCSV(dirSpec.interpolated);
   const time = [];
@@ -552,6 +560,11 @@ async function bootstrap() {
       const spec = customSpec || fallbackSpec;
       await renderDirection(dir, spec);
       await updateKpisAndLinks(spec);
+      // Clear previous overlays and apply only if selected trip differs from the dataset trip
+      try {
+        const gd = document.getElementById(`distanceChart-${dir}`);
+        if (gd) Plotly.purge(gd);
+      } catch {}
       if (tripId) await overlayOtherTrips(dir, tripId);
     });
   }
