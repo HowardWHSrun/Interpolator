@@ -31,6 +31,7 @@ def build_manifest():
         'stops': find_stops('Inbound_trip_'),
         'interpolated': find_interp('Inbound_trip_'),
         'overview_img': '/trajectory_analysis_output/Results/overview/inbound_full_trip_overview.png',
+        'overview_img_linear': '/trajectory_analysis_output/Results/overview/inbound_full_trip_overview_linear.png',
         'segments_dir': '/trajectory_analysis_output/Results/individual_segments/',
         'segment_prefix': 'inbound segment_'
     }
@@ -39,6 +40,7 @@ def build_manifest():
         'stops': find_stops('Outbound_trip_'),
         'interpolated': find_interp('Outbound_trip_'),
         'overview_img': '/trajectory_analysis_output/Results/overview/outbound_full_trip_overview.png',
+        'overview_img_linear': '/trajectory_analysis_output/Results/overview/outbound_full_trip_overview_linear.png',
         'segments_dir': '/trajectory_analysis_output/Results/individual_segments/',
         'segment_prefix': 'outbound segment_'
     }

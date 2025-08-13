@@ -368,7 +368,15 @@ async function renderDirection(dirKey, dirSpec) {
   spdLayout.hovermode = 'x unified';
   spdLayout.dragmode = 'select';
   try {
-    Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+    const model = document.querySelector('input[name="model"]:checked')?.value || 'nonlinear';
+    if (model === 'linear' && (dirSpec.overview_img_linear || dirSpec.overview_img)) {
+      const imgSrc = resolvePath(dirSpec.overview_img_linear || dirSpec.overview_img);
+      // Render empty traces but use overview image as a background reference for linear model
+      Plotly.newPlot(`distanceChart-${dirKey}`, [], Object.assign({}, distLayout, { images: [{ source: imgSrc, xref: 'paper', yref: 'paper', x: 0, y: 1, sizex: 1, sizey: 1, layer: 'below', opacity: 0.35 }] }), { responsive: true, displaylogo: false });
+      Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+    } else {
+      Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+    }
   } catch (e) {
     Plotly.newPlot(`speedChart-${dirKey}`, [], spdLayout, { responsive: true, displaylogo: false });
   }
@@ -545,6 +553,14 @@ async function bootstrap() {
     });
   }
   await loadTrain(0);
+  // Model toggle listener to rerender with chosen model
+  document.querySelectorAll('input[name="model"]').forEach(r => {
+    r.addEventListener('change', async () => {
+      const dir = document.querySelector('input[name="dir"]:checked')?.value || 'inbound';
+      const man = await buildManifest();
+      await renderDirection(dir, man.trains[0][dir]);
+    });
+  });
 }
 
 bootstrap().catch(err => {

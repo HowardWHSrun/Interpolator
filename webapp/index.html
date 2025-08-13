@@ -22,9 +22,14 @@
         <p>No reverse • Station 10–40 s • Intersection 0–90 s • Likely accel 2 mph/s</p>
       </div>
     </div>
-    <div class="toolbar">
-      <button id="resetZoomBtn" class="btn"><span class="material-symbols-outlined">zoom_out_map</span><span>Reset Zoom</span></button>
-    </div>
+      <div class="toolbar">
+        <div class="btn-group" role="group" aria-label="Model">
+          <label style="margin-right:8px;">Model:</label>
+          <label><input type="radio" name="model" value="nonlinear" checked> Nonlinear</label>
+          <label style="margin-left:8px;"><input type="radio" name="model" value="linear"> Linear</label>
+        </div>
+        <button id="resetZoomBtn" class="btn" style="margin-left:12px;"><span class="material-symbols-outlined">zoom_out_map</span><span>Reset Zoom</span></button>
+      </div>
   </header>
 
   <div class="layout">
