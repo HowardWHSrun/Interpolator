@@ -340,7 +340,16 @@ async function renderDirection(dirKey, dirSpec) {
   distLayout.margin = Object.assign({}, distLayout.margin, { b: 80 });
   distLayout.hovermode = 'x unified';
   distLayout.dragmode = 'select';
-  Plotly.newPlot(`distanceChart-${dirKey}`, distData, distLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+  const model = document.querySelector('input[name="model"]:checked')?.value || 'nonlinear';
+  const distEl = document.getElementById(`distanceChart-${dirKey}`);
+  if (model === 'linear' && (dirSpec.overview_img_linear || dirSpec.overview_img)) {
+    try { Plotly.purge(`distanceChart-${dirKey}`); } catch {}
+    const src = resolvePath(dirSpec.overview_img_linear || dirSpec.overview_img);
+    if (distEl) distEl.innerHTML = `<img src="${src}" alt="${dirKey} linear overview" style="width:100%;height:auto;display:block;"/>`;
+  } else {
+    if (distEl) distEl.innerHTML = '';
+    Plotly.newPlot(`distanceChart-${dirKey}`, distData, distLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
+  }
   // Apply overlay for selected trip
   const tripSel = document.getElementById('tripIdSelect');
   if (tripSel && tripSel.value) {
@@ -368,15 +377,7 @@ async function renderDirection(dirKey, dirSpec) {
   spdLayout.hovermode = 'x unified';
   spdLayout.dragmode = 'select';
   try {
-    const model = document.querySelector('input[name="model"]:checked')?.value || 'nonlinear';
-    if (model === 'linear' && (dirSpec.overview_img_linear || dirSpec.overview_img)) {
-      const imgSrc = resolvePath(dirSpec.overview_img_linear || dirSpec.overview_img);
-      // Render empty traces but use overview image as a background reference for linear model
-      Plotly.newPlot(`distanceChart-${dirKey}`, [], Object.assign({}, distLayout, { images: [{ source: imgSrc, xref: 'paper', yref: 'paper', x: 0, y: 1, sizex: 1, sizey: 1, layer: 'below', opacity: 0.35 }] }), { responsive: true, displaylogo: false });
-      Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
-    } else {
-      Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
-    }
+    Plotly.newPlot(`speedChart-${dirKey}`, spdData, spdLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
   } catch (e) {
     Plotly.newPlot(`speedChart-${dirKey}`, [], spdLayout, { responsive: true, displaylogo: false });
   }
@@ -445,7 +446,7 @@ async function renderDirection(dirKey, dirSpec) {
     });
   }
 
-  attachSelectHandler(`distanceChart-${dirKey}`);
+  if (model !== 'linear') attachSelectHandler(`distanceChart-${dirKey}`);
   attachSelectHandler(`speedChart-${dirKey}`);
 
   // Wire up Clear button to reset detail panel
@@ -505,8 +506,10 @@ async function bootstrap() {
 
   async function loadTrain(idx) {
     const t = manifest.trains[idx];
-    // pick a default dir that actually has data
     let selected = document.querySelector('input[name="dir"]:checked')?.value || await pickDefaultDir(manifest);
+    // If current selection has no data, switch to the available one
+    const hasData = t[selected] && t[selected].interpolated && await urlExists(t[selected].interpolated);
+    if (!hasData) selected = await pickDefaultDir(manifest);
     const radio = document.querySelector(`input[name="dir"][value="${selected}"]`);
     if (radio) radio.checked = true;
     setActiveSection(selected);
