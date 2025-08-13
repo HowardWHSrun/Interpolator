@@ -11,7 +11,7 @@ function resolvePath(p) {
     return p.replace(/^\//, ''); // project Pages root '/<repo>/' → use relative
   }
   // Relative paths
-  if (inWebapp) return `../${p}`; // lift out of /webapp/
+  // Keep relative paths relative to the current folder so '/webapp/manifest.json' resolves correctly
   return p;
 }
 
