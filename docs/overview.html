@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trip Overviews — Nonlinear and Linear</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif; margin: 16px; }
+    h1 { margin: 0 0 12px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .card { flex: 1 1 600px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fff; }
+    .card h2 { margin: 0 0 8px; font-size: 16px; }
+    img { max-width: 100%; height: auto; display: block; border: 1px solid #e5e7eb; border-radius: 6px; }
+    small { color: #6b7280; }
+  </style>
+  </head>
+<body>
+  <h1>Trip Overviews</h1>
+  <small>Left: Nonlinear interpolation • Right: Linear velocity integration</small>
+
+  <div class="row">
+    <div class="card">
+      <h2>Inbound — Nonlinear</h2>
+      <img src="/trajectory_analysis_output/Results/overview/inbound_full_trip_overview.png" alt="Inbound nonlinear overview" />
+    </div>
+    <div class="card">
+      <h2>Inbound — Linear</h2>
+      <img src="/trajectory_analysis_output/Results/overview/inbound_full_trip_overview_linear.png" alt="Inbound linear overview" />
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Outbound — Nonlinear</h2>
+      <img src="/trajectory_analysis_output/Results/overview/outbound_full_trip_overview.png" alt="Outbound nonlinear overview" />
+    </div>
+    <div class="card">
+      <h2>Outbound — Linear</h2>
+      <img src="/trajectory_analysis_output/Results/overview/outbound_full_trip_overview_linear.png" alt="Outbound linear overview" />
+    </div>
+  </div>
+</body>
+</html>
+
+

@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 import warnings
 warnings.filterwarnings('ignore')
+import argparse
 
 # -------------------------- Styling / speed tweaks -------------------------- #
 def set_plot_style():
@@ -193,7 +194,8 @@ class TrainTrajectoryInterpolator:
         if T <= 0: return None
 
         # 1) Normalize so distance increases
-        sgn = 1.0 if d2 >= d1 else -1.0
+        # No reverse allowed: force positive travel direction and nonnegative speeds
+        sgn = 1.0
         d1n, d2n = sgn * d1, sgn * d2
         # In normalized frame, work with nonnegative velocity magnitudes
         v1n, v2n = abs(v1_fps), abs(v2_fps)
@@ -286,12 +288,48 @@ class TrainTrajectoryInterpolator:
             v_like_n = np.clip(v_like_n, v_lo_n, v_hi_n)
             v_min_smooth_n = v_lo_n.copy()
             v_max_smooth_n = v_hi_n.copy()
-        x_like_n = np.empty_like(tau)
-        x_like_n[0] = d1n
-        for i in range(1, len(tau)):
-            dt = tau[i] - tau[i - 1]
-            x_like_n[i] = x_like_n[i - 1] + 0.5 * (v_like_n[i - 1] + v_like_n[i]) * dt
-            x_like_n[i] = min(max(x_like_n[i], x_lo_n[i]), x_hi_n[i])
+        # Primary: keep velocity profile (minimal jerk) and integrate to position.
+        # Adjust only with a global scale k to exactly match required distance, with clipping to [v_lo_n, v_hi_n].
+        v_base_n = v_like_n.copy()
+
+        def integrate_velocity(vn: np.ndarray) -> np.ndarray:
+            s = np.empty_like(tau)
+            s[0] = d1n
+            for j in range(1, len(tau)):
+                dtj = tau[j] - tau[j-1]
+                s[j] = s[j-1] + 0.5 * (vn[j-1] + vn[j]) * dtj
+            return s
+
+        def area_for_k(k: float) -> float:
+            v_scaled = np.clip(k * v_base_n, v_lo_n, v_hi_n)
+            s = integrate_velocity(v_scaled)
+            return float(s[-1] - d1n)
+
+        required_area = float(d2n - d1n)
+        # If needed, find k via bisection so that the integrated area matches required distance
+        k_lo, k_hi = 0.0, 1.0
+        # Expand upper bound until area >= required or we hit a practical cap
+        while area_for_k(k_hi) < required_area and k_hi < 64.0:
+            k_hi *= 1.6
+        # If even at large k we cannot reach the area (due to clipping), fall back to v_hi_n
+        if area_for_k(k_hi) < required_area - 1e-6:
+            v_like_n = v_hi_n.copy()
+        else:
+            for _ in range(40):
+                k_mid = 0.5 * (k_lo + k_hi)
+                a_mid = area_for_k(k_mid)
+                if abs(a_mid - required_area) < 1e-3:
+                    k_lo = k_hi = k_mid
+                    break
+                if a_mid < required_area:
+                    k_lo = k_mid
+                else:
+                    k_hi = k_mid
+            k_star = 0.5 * (k_lo + k_hi)
+            v_like_n = np.clip(k_star * v_base_n, v_lo_n, v_hi_n)
+
+        # Integrate final velocity to get likely position; do not clamp x_like inside lens to preserve consistency
+        x_like_n = integrate_velocity(v_like_n)
 
         # 6) Transform back to original frame
         x_min = sgn * x_lo_n
@@ -320,11 +358,136 @@ class TrainTrajectoryInterpolator:
             'likely_position': x_like
         }
 
+    def calculate_linear_velocity_segment(self, t1, t2, d1, d2, v1_fps, v2_fps, num_points=120):
+        """No-bounds mode:
+        - Likely velocity is the straight line between endpoint magnitudes
+        - Uniform scaling ensures integrated distance equals endpoint delta
+        - Distance is the integral of the (signed) velocity
+        - Bands collapse to the likely curve
+        Returns the same dict shape as calculate_feasible_bounds.
+        """
+        T = t2 - t1
+        if T <= 0:
+            return None
+        # No reverse allowed: positive direction and nonnegative speeds
+        sgn = 1.0
+        t = np.linspace(t1, t2, num_points)
+        tau = t - t1
+        v1_mag = max(v1_fps, 0.0)
+        v2_mag = max(v2_fps, 0.0)
+        u = tau / T
+        # Base: straight line between endpoints (magnitude)
+        v_base_mag = v1_mag + (v2_mag - v1_mag) * u
+        # Bump shape integrates to 1 over [0,1]
+        g = 6.0 * u * (1.0 - u)
+        required = abs(d2 - d1)
+
+        def integrate_with_a(a_val: float):
+            v_mag = v_base_mag + a_val * g
+            v_mag = np.clip(v_mag, 0.0, self.V)  # enforce 0 <= v <= Vmax (ft/s)
+            v_signed = v_mag
+            # integrate numerically
+            x = np.empty_like(tau)
+            x[0] = d1
+            for i in range(1, len(tau)):
+                dt = tau[i] - tau[i-1]
+                x[i] = x[i-1] + 0.5 * (v_signed[i-1] + v_signed[i]) * dt
+            return v_mag, v_signed, x
+
+        # Bisection on a to match required area under Vmax cap
+        # Bracket a
+        a_lo, a_hi = -self.V, self.V
+        _, _, x_lo = integrate_with_a(a_lo)
+        _, _, x_hi = integrate_with_a(a_hi)
+        # Expand if needed
+        tries = 0
+        while (x_lo[-1] - d1) > required and tries < 20:
+            a_lo *= 1.7
+            _, _, x_lo = integrate_with_a(a_lo)
+            tries += 1
+        tries = 0
+        while (x_hi[-1] - d1) < required and tries < 20:
+            a_hi *= 1.7
+            _, _, x_hi = integrate_with_a(a_hi)
+            tries += 1
+
+        # If still not bracketed, fall back to saturating at Vmax
+        if (x_hi[-1] - d1) < required - 1e-6:
+            v_mag, v_signed, x_like = integrate_with_a(a_hi)
+        else:
+            for _ in range(50):
+                a_mid = 0.5 * (a_lo + a_hi)
+                _, _, x_mid = integrate_with_a(a_mid)
+                area_mid = x_mid[-1] - d1
+                if abs(area_mid - required) < 1e-4:
+                    a_lo = a_hi = a_mid
+                    break
+                if area_mid < required:
+                    a_lo = a_mid
+                else:
+                    a_hi = a_mid
+            v_mag, v_signed, x_like = integrate_with_a(0.5 * (a_lo + a_hi))
+        v_mph = np.abs(v_signed) / self.MPH_TO_FPS
+        v_ms_signed = v_signed / self.MPS_TO_FPS
+        return {
+            'time': t1 + tau,
+            'min_speed': v_mph,
+            'max_speed': v_mph,
+            'likely_speed': v_mph,
+            'signed_velocity_ms': v_ms_signed,
+            'min_position': x_like,
+            'max_position': x_like,
+            'likely_position': x_like
+        }
+
+    def calculate_pure_linear_segment(self, t1, t2, d1, d2, v1_fps, v2_fps, num_points=120):
+        """Alternative model for side-by-side visualization:
+        - Velocity connects the two endpoint speeds linearly (no bump, no cap)
+        - Signed by travel direction (increasing distance → +, decreasing → -)
+        - Distance is the plain integral of that velocity; may not hit the end dot
+        """
+        T = t2 - t1
+        if T <= 0:
+            return None
+        sgn = 1.0 if d2 >= d1 else -1.0
+        t = np.linspace(t1, t2, num_points)
+        tau = t - t1
+        v1_mag = max(v1_fps, 0.0)
+        v2_mag = max(v2_fps, 0.0)
+        u = tau / T
+        v_like_mag = v1_mag + (v2_mag - v1_mag) * u
+        v_signed = v_like_mag
+        # integrate numerically to distance
+        x_like = np.empty_like(tau)
+        x_like[0] = d1
+        for i in range(1, len(tau)):
+            dt = tau[i] - tau[i-1]
+            x_like[i] = x_like[i-1] + 0.5 * (v_signed[i-1] + v_signed[i]) * dt
+        v_mph = np.abs(v_signed) / self.MPH_TO_FPS
+        v_ms_signed = v_signed / self.MPS_TO_FPS
+        return {
+            'time': t1 + tau,
+            'min_speed': v_mph,
+            'max_speed': v_mph,
+            'likely_speed': v_mph,
+            'signed_velocity_ms': v_ms_signed,
+            'min_position': x_like,
+            'max_position': x_like,
+            'likely_position': x_like
+        }
+
     # ------------------------------ Plotting -------------------------------- #
     def plot_segment_detail(self, i, data, interp, tcol='t_rel', save=True, label_prefix=""):
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, constrained_layout=True)
-        fig.set_constrained_layout_pads(w_pad=0.08, h_pad=0.10, wspace=0.12, hspace=0.15)
+        # Also compute alternative (pure linear) model for side-by-side comparison
         r1, r2 = data.iloc[i], data.iloc[i+1]
+        alt = self.calculate_pure_linear_segment(
+            r1[tcol], r2[tcol], r1['dist_from_start'], r2['dist_from_start'], r1['speed_fps'], r2['speed_fps'], num_points=120
+        )
+
+        fig, axes = plt.subplots(2, 2, figsize=(16, 10), constrained_layout=True)
+        ax1, ax2 = axes[0,0], axes[1,0]
+        ax1b, ax2b = axes[0,1], axes[1,1]
+        fig.set_constrained_layout_pads(w_pad=0.08, h_pad=0.10, wspace=0.12, hspace=0.15)
         fig.suptitle(
             f"{label_prefix}Segment {i+1}\n"
             f"Time: {r1['timestamp'].strftime('%H:%M:%S')} → {r2['timestamp'].strftime('%H:%M:%S')}",
@@ -343,21 +506,24 @@ class TrainTrajectoryInterpolator:
         ax1.scatter([r1[tcol], r2[tcol]], [r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048],
                     s=80, color='crimson', label='GPS', zorder=5, rasterized=True)
         ax1.set_ylabel('Distance (m)')
-        ax1.set_title('Distance vs Time (lens; reverse allowed)')
+        ax1.set_title('Distance vs Time (nonlinear interpolation)')
         ax1.legend(loc='upper left')
+        # X-axis tailored to segment; Distance Y-axis per segment (can change)
         t0, t1 = float(interp['time'][0]), float(interp['time'][-1])
-        dx = max(1e-6, t1 - t0)
-        ax1.set_xlim(t0 - 0.03*dx, t1 + 0.03*dx)
+        ax1.set_xlim(t0, t1)
         ylo = min(min_pos_m.min(), r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048)
         yhi = max(max_pos_m.max(), r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048)
         dy = max(1.0, yhi - ylo)
         ax1.set_ylim(ylo - 0.05*dy, yhi + 0.05*dy)
 
-        # Speed vs time
-        # Convert mph arrays to m/s for plotting
-        min_ms = interp['min_speed'] * self.MPH_TO_MPS
-        max_ms = interp['max_speed'] * self.MPH_TO_MPS
-        like_ms = interp['likely_speed'] * self.MPH_TO_MPS
+        # Velocity vs time — plot magnitude (no negative), even if distance decreases
+        if 'signed_velocity_ms' in interp:
+            mag = np.abs(interp['signed_velocity_ms'])
+            min_ms = max_ms = like_ms = mag
+        else:
+            min_ms = interp['min_speed'] * self.MPH_TO_MPS
+            max_ms = interp['max_speed'] * self.MPH_TO_MPS
+            like_ms = interp['likely_speed'] * self.MPH_TO_MPS
         ax2.fill_between(interp['time'], min_ms, max_ms,
                          alpha=0.28, color='lightgray', rasterized=True)
         ax2.plot(interp['time'], min_ms,  lw=2, label='Min feasible')
@@ -369,13 +535,42 @@ class TrainTrajectoryInterpolator:
         ax2.axhline(self.MAX_SPEED_MPH * self.MPH_TO_MPS, ls=':', lw=1, alpha=0.7, label='Max Velocity')
         ax2.set_xlabel('Time (s)')  # trip-relative (starts at 0)
         ax2.set_ylabel('Velocity (m/s)')
-        ax2.set_title('Velocity vs Time (reverse allowed)')
+        ax2.set_title('Velocity vs Time (nonlinear)')
         ax2.legend(loc='upper right')
-        ax2.set_xlim(t0 - 0.03*dx, t1 + 0.03*dx)
-        y2lo = min(min_ms.min(), r1['speed'], r2['speed'])
-        y2hi = max(max_ms.max(), r1['speed'], r2['speed'], self.MAX_SPEED_MPH * self.MPH_TO_MPS)
-        dy2 = max(0.5, y2hi - y2lo)
-        ax2.set_ylim(y2lo - 0.06*dy2, y2hi + 0.06*dy2)
+        ax2.set_xlim(t0, t1)
+        ax2.set_ylim(-0.5, self.MAX_SPEED_MPH * self.MPH_TO_MPS)
+
+        # Right column: alternative model (pure linear velocity integration)
+        if alt:
+            # Distance
+            min_pos_m_b = alt['min_position'] * 0.3048
+            max_pos_m_b = alt['max_position'] * 0.3048
+            like_pos_m_b = alt['likely_position'] * 0.3048
+            ax1b.fill_between(alt['time'], min_pos_m_b, max_pos_m_b, alpha=0.15, color='lightgray', rasterized=True)
+            ax1b.plot(alt['time'], min_pos_m_b, lw=1.2, label='Min (alt)')
+            ax1b.plot(alt['time'], max_pos_m_b, lw=1.2, label='Max (alt)')
+            ax1b.plot(alt['time'], like_pos_m_b, 'k--', lw=1.6, alpha=0.85, label='Likely (alt)')
+            ax1b.scatter([r1[tcol], r2[tcol]], [r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048], s=40, color='crimson', label='GPS', zorder=5, rasterized=True)
+            ax1b.set_ylabel('Distance (m)')
+            ax1b.set_title('Distance vs Time (linear interpolation)')
+            ax1b.set_xlim(t0, t1)
+            ylo_b = min(min_pos_m_b.min(), r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048)
+            yhi_b = max(max_pos_m_b.max(), r1['dist_from_start']*0.3048, r2['dist_from_start']*0.3048)
+            dy_b = max(1.0, yhi_b - ylo_b)
+            ax1b.set_ylim(ylo_b - 0.05*dy_b, yhi_b + 0.05*dy_b)
+
+            # Velocity magnitude (alt)
+            alt_mag = np.abs(alt.get('signed_velocity_ms', (alt['likely_speed'] * self.MPH_TO_MPS)))
+            ax2b.fill_between(alt['time'], alt_mag, alt_mag, alpha=0.15, color='lightgray', rasterized=True)
+            ax2b.plot(alt['time'], alt_mag, 'k--', lw=1.6, alpha=0.85, label='Likely (alt)')
+            # Show endpoint GPS dots clearly
+            ax2b.scatter([r1[tcol], r2[tcol]], [r1['speed'], r2['speed']], s=60, color='crimson', zorder=5, label='GPS')
+            ax2b.axhline(self.MAX_SPEED_MPH * self.MPH_TO_MPS, ls=':', lw=1, alpha=0.7, label='Max Velocity')
+            ax2b.set_xlabel('Time (s)')
+            ax2b.set_ylabel('Velocity (m/s)')
+            ax2b.set_title('Velocity vs Time (linear)')
+            ax2b.set_xlim(t0, t1)
+            ax2b.set_ylim(-0.5, self.MAX_SPEED_MPH * self.MPH_TO_MPS)
 
         if save:
             fn = self.dirs['segments'] / f"{label_prefix.lower()}segment_{i+1:03d}.png"
@@ -407,15 +602,25 @@ class TrainTrajectoryInterpolator:
         ax1.set_title('Distance vs Time (lens bands; reverse allowed; overlap → darker)')
         ax1.legend(loc='upper left')
 
-        # Speed vs time
+        # Velocity vs time — plot magnitude (no negative)
         for p in interps:
             # Convert mph arrays to m/s for plotting
-            p_min_ms = p['min_speed'] * self.MPH_TO_MPS
-            p_max_ms = p['max_speed'] * self.MPH_TO_MPS
-            p_like_ms = p['likely_speed'] * self.MPH_TO_MPS
+            if 'signed_velocity_ms' in p:
+                mag = np.abs(p['signed_velocity_ms'])
+                p_min_ms = p_max_ms = p_like_ms = mag
+            else:
+                p_min_ms = p['min_speed'] * self.MPH_TO_MPS
+                p_max_ms = p['max_speed'] * self.MPH_TO_MPS
+                p_like_ms = p['likely_speed'] * self.MPH_TO_MPS
             # Prefer smooth envelopes if present
-            p_min_s_ms = (p.get('min_speed_smooth', None) or p['min_speed']) * self.MPH_TO_MPS
-            p_max_s_ms = (p.get('max_speed_smooth', None) or p['max_speed']) * self.MPH_TO_MPS
+            p_min_s_arr = p['min_speed']
+            p_max_s_arr = p['max_speed']
+            if 'min_speed_smooth' in p:
+                p_min_s_arr = p['min_speed_smooth']
+            if 'max_speed_smooth' in p:
+                p_max_s_arr = p['max_speed_smooth']
+            p_min_s_ms = p_min_s_arr * self.MPH_TO_MPS
+            p_max_s_ms = p_max_s_arr * self.MPH_TO_MPS
             ax2.fill_between(p['time'], p_min_s_ms, p_max_s_ms,
                              alpha=0.22, color='gray', rasterized=True)
             ax2.plot(p['time'], p_like_ms, '-', lw=1.1, alpha=0.80,
@@ -427,6 +632,50 @@ class TrainTrajectoryInterpolator:
         ax2.set_xlabel('Time (s)')
         ax2.set_ylabel('Velocity (m/s)')
         ax2.set_title('Velocity vs Time (feasible bands)')
+        ax2.legend(loc='upper right')
+
+        out = self.dirs['overview'] / filename
+        safe_savefig(fig, out)
+        plt.close(fig)
+        return out
+
+    def plot_full_trip_overview_linear(self, trip_df, interps, title, filename, tcol='t_rel'):
+        if not interps: return None
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), constrained_layout=True)
+        fig.set_constrained_layout_pads(w_pad=0.08, h_pad=0.10, wspace=0.12, hspace=0.15)
+        fig.suptitle(title, fontweight='bold')
+
+        # Distance vs time (alt)
+        for p in interps:
+            p_min_m = p['min_position'] * 0.3048
+            p_max_m = p['max_position'] * 0.3048
+            p_like_m = p['likely_position'] * 0.3048
+            ax1.fill_between(p['time'], p_min_m, p_max_m, alpha=0.18, color='gray', rasterized=True)
+            ax1.plot(p['time'], p_like_m, '-', lw=1.1, alpha=0.85, color='black', rasterized=True)
+        ax1.scatter(trip_df[tcol], trip_df['dist_from_start']*0.3048, s=10, alpha=0.65, label='GPS', rasterized=True)
+        ax1.set_xlabel('Time (s)')
+        ax1.set_ylabel('Distance (m)')
+        ax1.set_title('Distance vs Time (linear velocity integration)')
+        # small padding
+        ax1.set_ylim(ax1.get_ylim()[0]-0.02*(ax1.get_ylim()[1]-ax1.get_ylim()[0]), ax1.get_ylim()[1]+0.02*(ax1.get_ylim()[1]-ax1.get_ylim()[0]))
+
+        # Velocity vs time (alt)
+        for p in interps:
+            if 'signed_velocity_ms' in p:
+                v_ms = np.abs(p['signed_velocity_ms'])
+            else:
+                v_ms = p['likely_speed'] * self.MPH_TO_MPS
+            ax2.plot(p['time'], v_ms, '-', lw=1.1, alpha=0.85, color='black', rasterized=True)
+        # Overlay original GPS speed samples (m/s)
+        try:
+            ax2.scatter(trip_df[tcol], trip_df['speed'], s=10, alpha=0.65, label='GPS', rasterized=True)
+        except Exception:
+            pass
+        ax2.axhline(self.MAX_SPEED_MPH * self.MPH_TO_MPS, ls='--', lw=1, alpha=0.6, label='Max Velocity')
+        ax2.set_xlabel('Time (s)')
+        ax2.set_ylabel('Velocity (m/s)')
+        ax2.set_title('Velocity vs Time (linear)')
+        ax2.set_ylim(0.0, self.MAX_SPEED_MPH * self.MPH_TO_MPS)
         ax2.legend(loc='upper right')
 
         out = self.dirs['overview'] / filename
@@ -552,8 +801,65 @@ class TrainTrajectoryInterpolator:
         trip['t_rel'] = trip['time_seconds'] - t0
         return (best, trip)
 
+    def analyze_trip_by_id(self, trip_id: str, label_prefix: str | None = None, segments_to_plot: int | None = None):
+        """Analyze a specific trip by exact trip_id, generating all PNGs and CSVs."""
+        if 'trip_id' not in self.df.columns:
+            print("[ERROR] CSV has no 'trip_id' column.")
+            return None
+        trip = self.df[self.df['trip_id'] == trip_id].copy()
+        if trip.empty or len(trip) < 2:
+            print(f"[ERROR] No rows for trip_id={trip_id} or too few points.")
+            return None
+        trip = trip.sort_values('timestamp').reset_index(drop=True)
+        t0 = trip['time_seconds'].min()
+        trip['t_rel'] = trip['time_seconds'] - t0
+        if label_prefix is None:
+            dir_val = str(trip.iloc[0]['direction']) if 'direction' in trip.columns else ''
+            lp = 'Inbound' if isinstance(dir_val, str) and dir_val.lower().startswith('in') else 'Outbound'
+        else:
+            lp = label_prefix
+        label = f"{lp}_trip_{trip_id}"
+        print(f"\n=== {label} (t starts at 0 s; reverse allowed) ===")
+        interps, seg_reports = [], []
+        for i in range(len(trip)-1):
+            p = self.calculate_linear_velocity_segment(
+                trip.iloc[i]['t_rel'], trip.iloc[i+1]['t_rel'],
+                trip.iloc[i]['dist_from_start'], trip.iloc[i+1]['dist_from_start'],
+                trip.iloc[i]['speed_fps'], trip.iloc[i+1]['speed_fps'],
+                num_points=120
+            )
+            if p:
+                interps.append(p)
+                seg_reports.append(self.generate_segment_report(i, trip, p, tcol='t_rel'))
+                if segments_to_plot is None or i < segments_to_plot:
+                    self.plot_segment_detail(i, trip, p, tcol='t_rel', save=True, label_prefix=f"{lp} ")
+        self.plot_full_trip_overview_with_bands(
+            trip, interps,
+            title=f"{lp} Full Trip Overview — nonlinear interpolation",
+            filename=f"{lp.lower()}_full_trip_overview.png",
+            tcol='t_rel'
+        )
+        # Also produce linear-velocity overview for the same trip
+        interps_alt = []
+        for j in range(len(trip)-1):
+            alt = self.calculate_pure_linear_segment(
+                trip.iloc[j]['t_rel'], trip.iloc[j+1]['t_rel'],
+                trip.iloc[j]['dist_from_start'], trip.iloc[j+1]['dist_from_start'],
+                trip.iloc[j]['speed_fps'], trip.iloc[j+1]['speed_fps'], num_points=120)
+            if alt:
+                interps_alt.append(alt)
+        self.plot_full_trip_overview_linear(
+            trip, interps_alt,
+            title=f"{lp} Full Trip Overview — linear interpolation",
+            filename=f"{lp.lower()}_full_trip_overview_linear.png",
+            tcol='t_rel'
+        )
+        self.create_summary_report(trip, interps, seg_reports, label=label)
+        self.export_all_data(trip, interps, label=label)
+        return trip, interps, seg_reports
+
     # ----------------------- End-to-end per direction ------------------------ #
-    def analyze_direction_full_trip(self, direction_value, label_prefix="Inbound", segments_to_plot=10):
+    def analyze_direction_full_trip(self, direction_value, label_prefix="Inbound", segments_to_plot: int | None = None):
         trip_id, data = self._select_full_trip(direction_value)
         if trip_id is None or len(data) < 2:
             print(f"[WARN] No full trip for direction={direction_value}")
@@ -564,7 +870,7 @@ class TrainTrajectoryInterpolator:
         interps, seg_reports = [], []
 
         for i in range(len(data)-1):
-            p = self.calculate_feasible_bounds(
+            p = self.calculate_linear_velocity_segment(
                 data.iloc[i]['t_rel'], data.iloc[i+1]['t_rel'],
                 data.iloc[i]['dist_from_start'], data.iloc[i+1]['dist_from_start'],
                 data.iloc[i]['speed_fps'], data.iloc[i+1]['speed_fps'],
@@ -573,13 +879,28 @@ class TrainTrajectoryInterpolator:
             if p:
                 interps.append(p)
                 seg_reports.append(self.generate_segment_report(i, data, p, tcol='t_rel'))
-                if i < segments_to_plot:
+                if segments_to_plot is None or i < segments_to_plot:
                     self.plot_segment_detail(i, data, p, tcol='t_rel', save=True, label_prefix=f"{label_prefix} ")
 
         self.plot_full_trip_overview_with_bands(
             data, interps,
             title=f"{label_prefix} Full Trip Overview (Trip {trip_id}) — lens w/ reverse",
             filename=f"{label_prefix.lower()}_full_trip_overview.png",
+            tcol='t_rel'
+        )
+        # Also produce linear-velocity overview
+        interps_alt = []
+        for i in range(len(data)-1):
+            alt = self.calculate_pure_linear_segment(
+                data.iloc[i]['t_rel'], data.iloc[i+1]['t_rel'],
+                data.iloc[i]['dist_from_start'], data.iloc[i+1]['dist_from_start'],
+                data.iloc[i]['speed_fps'], data.iloc[i+1]['speed_fps'], num_points=120)
+            if alt:
+                interps_alt.append(alt)
+        self.plot_full_trip_overview_linear(
+            data, interps_alt,
+            title=f"{label_prefix} Full Trip Overview (linear velocity)",
+            filename=f"{label_prefix.lower()}_full_trip_overview_linear.png",
             tcol='t_rel'
         )
         self.create_summary_report(data, interps, seg_reports, label=label)
@@ -594,22 +915,28 @@ if __name__ == "__main__":
     set_plot_style()
     plt.ioff()
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--trip-id', dest='trip_id', default=None, help='Analyze only this exact trip_id')
+    parser.add_argument('--csv', dest='csv', default='4_k_line_data_with_trip_id.csv')
+    args = parser.parse_args()
+
     ti = TrainTrajectoryInterpolator(
-        csv_file='4_k_line_data_with_trip_id.csv',
+        csv_file=args.csv,
         output_dir='trajectory_analysis_output/Results'
     )
 
-    inbound_val, outbound_val = ti._guess_direction_values()
-    print(f"Detected: inbound={inbound_val}, outbound={outbound_val}")
-
-    if inbound_val is not None:
-        ti.analyze_direction_full_trip(inbound_val, label_prefix="Inbound", segments_to_plot=12)
+    if args.trip_id:
+        ti.analyze_trip_by_id(args.trip_id, segments_to_plot=None)
     else:
-        print("[WARN] No inbound direction detected.")
-
-    if outbound_val is not None:
-        ti.analyze_direction_full_trip(outbound_val, label_prefix="Outbound", segments_to_plot=12)
-    else:
-        print("[WARN] No outbound direction detected.")
+        inbound_val, outbound_val = ti._guess_direction_values()
+        print(f"Detected: inbound={inbound_val}, outbound={outbound_val}")
+        if inbound_val is not None:
+            ti.analyze_direction_full_trip(inbound_val, label_prefix="Inbound", segments_to_plot=None)
+        else:
+            print("[WARN] No inbound direction detected.")
+        if outbound_val is not None:
+            ti.analyze_direction_full_trip(outbound_val, label_prefix="Outbound", segments_to_plot=None)
+        else:
+            print("[WARN] No outbound direction detected.")
 
     print("\nDone. Check the 'overview' and 'individual_segments' folders.")
