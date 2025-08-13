@@ -291,7 +291,7 @@ async function renderDirection(dirKey, dirSpec) {
   // Load interpolated CSV for distance/time bands and likely curve
   const rows = await fetchCSV(dirSpec.interpolated);
   const time = [];
-  const minPos = [], maxPos = [], likePos = [];
+  let minPos = [], maxPos = [], likePos = [];
   const minSpd = [], maxSpd = [], likeSpd = [];
   for (const r of rows) {
     const t = Number(r.time_s);
@@ -312,6 +312,17 @@ async function renderDirection(dirKey, dirSpec) {
     minSpd.push(Number.isFinite(smin) ? smin : 0);
     maxSpd.push(Number.isFinite(smax) ? smax : 0);
     likeSpd.push(Number.isFinite(slike) ? slike : 0);
+  }
+  // Normalize inbound to increasing distance (flip positions)
+  if (dirKey === 'inbound' && likePos.length >= 2) {
+    const lo = Math.min(...likePos);
+    const hi = Math.max(...likePos);
+    const flip = (v) => (hi + lo - v);
+    const minF = minPos.map(flip);
+    const maxF = maxPos.map(flip);
+    minPos = minF.map((v, i) => Math.min(v, maxF[i]));
+    maxPos = minF.map((v, i) => Math.max(v, maxF[i]));
+    likePos = likePos.map(flip);
   }
 
   // Overlay stop windows if available
@@ -342,7 +353,7 @@ async function renderDirection(dirKey, dirSpec) {
   distLayout.hovermode = 'x unified';
   distLayout.dragmode = 'select';
   Plotly.newPlot(`distanceChart-${dirKey}`, distData, distLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
-  // Overlay original points on main charts
+  // Overlay original points on main charts (flip inbound for display)
   try {
     const tripSel = document.getElementById('tripIdSelect');
     const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
@@ -350,7 +361,13 @@ async function renderDirection(dirKey, dirSpec) {
       const trips = await fetchRawTrips();
       const t = trips.find(r => r.dir === dirKey.toLowerCase() && String(r.trip_id) === String(selectedId));
       if (t) {
-        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: t.dist.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
+        let dY = t.dist.slice();
+        if (dirKey === 'inbound' && dY.length >= 2) {
+          const dlo = Math.min(...dY);
+          const dhi = Math.max(...dY);
+          dY = dY.map(v => (dhi + dlo - v));
+        }
+        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
         Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
       }
     }
@@ -397,7 +414,13 @@ async function renderDirection(dirKey, dirSpec) {
         const tr = trips.find(r => r.dir === dir && String(r.trip_id) === String(selectedId));
         if (tr) {
           const idx = tr.t_rel.map((t, i) => [t, i]).filter(([t]) => t >= tSel[0] && t <= tSel[tSel.length-1]).map(([,i]) => i);
-          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => tr.dist[i]*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
+          let dAll = tr.dist.slice();
+          if (dir === 'inbound' && dAll.length >= 2) {
+            const dlo = Math.min(...dAll);
+            const dhi = Math.max(...dAll);
+            dAll = dAll.map(v => (dhi + dlo - v));
+          }
+          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => dAll[i]*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
         }
       }
     } catch {}
