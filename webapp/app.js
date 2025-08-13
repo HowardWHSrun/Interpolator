@@ -140,7 +140,10 @@ async function populateTripSelect(dirKey) {
     const trips = await fetchRawTrips();
     const dirTrips = trips.filter(t => t.dir === dirKey.toLowerCase());
     const byDate = new Map();
+    // Only include trips that have interpolated CSVs available
     for (const t of dirTrips) {
+      const spec = await buildSpecForTrip(dirKey, t.trip_id);
+      if (!spec) continue;
       if (!byDate.has(t.dateKey)) byDate.set(t.dateKey, []);
       byDate.get(t.dateKey).push(t);
     }
