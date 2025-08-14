@@ -428,8 +428,9 @@ async function renderDirection(dirKey, dirSpec) {
           const dhi = Math.max(...dY);
           dY = dY.map(v => (dhi + dlo - v));
         }
-        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
-        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
+        // Overview: show raw points as markers only (avoid double-line confusion)
+        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
+        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
       }
     }
   } catch {}
@@ -465,7 +466,7 @@ async function renderDirection(dirKey, dirSpec) {
       titleEl.textContent = `${dir} detail ${t0}–${t1} s`;
     }
     const distSeries = [
-      ensureTrace('Likely', tSel, likePosSel, { type: 'scattergl', line: { color: '#111827', width: 2 }, showlegend: false })
+      ensureTrace('Likely', tSel, likePosSel, { type: 'scattergl', mode: 'lines', line: { color: '#111827', width: 2 }, showlegend: false })
     ];
     try {
       const tripSel = document.getElementById('tripIdSelect');
@@ -481,7 +482,8 @@ async function renderDirection(dirKey, dirSpec) {
             const dhi = Math.max(...dAll);
             dAll = dAll.map(v => (dhi + dlo - v));
           }
-          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => dAll[i]*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
+          // Detail panel: connect raw markers with a faint line for readability
+          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => dAll[i]*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 0.8, color: 'rgba(17,24,39,0.5)' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
         }
       }
     } catch {}
