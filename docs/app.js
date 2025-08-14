@@ -429,9 +429,9 @@ async function renderDirection(dirKey, dirSpec) {
           const { lo, hi } = inboundFlip;
           dY = dY.map(v => (hi + lo - v));
         }
-        // Overview: show raw points as markers only (avoid double-line confusion)
-        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
-        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
+        // Overview: connect raw points with a thin, faint line for readability
+        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 0.8, color: 'rgba(17,24,39,0.5)' }, marker: { size: 3, color: '#111827', opacity: 0.7 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
+        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'lines+markers', line: { width: 0.8, color: 'rgba(17,24,39,0.5)' }, marker: { size: 3, color: '#111827', opacity: 0.7 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
       }
     }
   } catch {}
