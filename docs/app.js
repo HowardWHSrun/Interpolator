@@ -102,6 +102,14 @@ async function fetchRawTrips() {
   return trips;
 }
 
+// Extract trip_id from a dirSpec path (e.g., ..._trip_<id>.csv/json)
+function extractTripIdFromSpec(dirSpec) {
+  if (!dirSpec) return '';
+  const p = dirSpec.interpolated || dirSpec.summary || '';
+  const m = String(p).match(/_trip_([A-Za-z0-9\-]+)(?:_|\.|$)/);
+  return m ? m[1] : '';
+}
+
 // ----------------------- Static stations (from CSV) ----------------------- //
 let STATIONS_CACHE = null;
 async function fetchStations() {
@@ -363,7 +371,7 @@ async function renderDirection(dirKey, dirSpec) {
   // Distance chart: only likely trajectory
   const likePosM = likePos.map(v => v * 0.3048);
   const distData = [
-    ensureTrace('Likely', time, likePosM, { type: 'scatter', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', width: 2 }, showlegend: true })
+    ensureTrace('Likely', time, likePosM, { type: 'scattergl', mode: 'lines', line: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') || '#111827', width: 2 }, showlegend: true })
   ];
   const distLayout = layout(`${dirKey} distance vs time (no reverse)`, 'Time (s)', 'Distance (m)');
   distLayout.paper_bgcolor = '#ffffff';
@@ -408,7 +416,8 @@ async function renderDirection(dirKey, dirSpec) {
   // Overlay original points on main charts (flip inbound for display)
   try {
     const tripSel = document.getElementById('tripIdSelect');
-    const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
+    // Prefer the manifest default trip if no selection yet
+    let selectedId = (tripSel && tripSel.value) ? tripSel.value : extractTripIdFromSpec(dirSpec);
     if (selectedId) {
       const trips = await fetchRawTrips();
       const t = trips.find(r => r.dir === dirKey.toLowerCase() && String(r.trip_id) === String(selectedId));
@@ -460,7 +469,7 @@ async function renderDirection(dirKey, dirSpec) {
     ];
     try {
       const tripSel = document.getElementById('tripIdSelect');
-      const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
+      let selectedId = (tripSel && tripSel.value) ? tripSel.value : extractTripIdFromSpec(dirSpec);
       if (selectedId) {
         const trips = await fetchRawTrips();
         const tr = trips.find(r => r.dir === dir && String(r.trip_id) === String(selectedId));
@@ -483,7 +492,7 @@ async function renderDirection(dirKey, dirSpec) {
     ];
     try {
       const tripSel = document.getElementById('tripIdSelect');
-      const selectedId = (tripSel && tripSel.value) ? tripSel.value : '';
+      let selectedId = (tripSel && tripSel.value) ? tripSel.value : extractTripIdFromSpec(dirSpec);
       if (selectedId) {
         const trips = await fetchRawTrips();
         const tr = trips.find(r => r.dir === dir && String(r.trip_id) === String(selectedId));
