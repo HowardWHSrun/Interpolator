@@ -49,7 +49,7 @@ class TrainTrajectoryInterpolator:
     Builds one inbound and one outbound full-trip overview.
     """
 
-    def __init__(self, csv_file='4_k_line_data_with_trip_id.csv', output_dir='trajectory_analysis_output'):
+    def __init__(self, csv_file='4_k_line_data_with_trip_id.csv', output_dir='trajectory_analysis_output', station_csv='sfmta_k_line_stop_locations.csv'):
         # Siemens S200 constraints (interpret input speeds as m/s)
         self.MAX_ACCEL_MS2 = 1.3   # m/s^2 (accelerating)
         self.MAX_DECEL_MS2 = 2.2   # m/s^2 (braking)
@@ -80,6 +80,7 @@ class TrainTrajectoryInterpolator:
         except Exception:
             pass
         self._setup_dirs()
+        self.stations = self._load_stations(station_csv)
         self._load(csv_file)
 
     # ------------------------------ Setup / Load ----------------------------- #
@@ -108,6 +109,55 @@ class TrainTrajectoryInterpolator:
         df['speed_fps']    = df['speed'] * self.MPS_TO_FPS
         self.df = df
         print(f"Loaded {len(df)} rows; {df['timestamp'].min()} → {df['timestamp'].max()}")
+
+    # ---------------------------- Stations (static) ---------------------------- #
+    def _load_stations(self, station_csv):
+        """Load station distances (ft) by direction from CSV if available.
+        Expected columns include at least: name, Distance, Direction, type.
+        Only rows where type contains 'station' are used.
+        Returns dict like {'inbound': [...], 'outbound': [...]}.
+        """
+        inbound, outbound = [], []
+        try:
+            from pathlib import Path as _Path
+            import pandas as _pd
+            # try given path; fallback to docs/data path
+            candidates = [station_csv,
+                          _Path('data') / station_csv,
+                          _Path('docs/data') / station_csv]
+            path = None
+            for c in candidates:
+                cp = _Path(c)
+                if cp.exists():
+                    path = cp
+                    break
+            if path is None:
+                return {'inbound': inbound, 'outbound': outbound}
+            df = _pd.read_csv(path)
+            # normalize
+            def _is_station(v):
+                try:
+                    return 'station' in str(v).lower()
+                except Exception:
+                    return False
+            for _, r in df.iterrows():
+                if not _is_station(r.get('type')):
+                    continue
+                try:
+                    dist_ft = float(r.get('Distance'))
+                except Exception:
+                    continue
+                dir_val = str(r.get('Direction') or r.get('direction') or '').strip().lower()
+                if not dir_val:
+                    continue
+                if dir_val.startswith('in'):
+                    inbound.append(dist_ft)
+                elif dir_val.startswith('out'):
+                    outbound.append(dist_ft)
+            inbound.sort(); outbound.sort()
+            return {'inbound': inbound, 'outbound': outbound}
+        except Exception:
+            return {'inbound': inbound, 'outbound': outbound}
 
     # ------------------------- Forward distances (allow v<0) ----------------- #
     def _fwd_min_dist(self, v1, t):
@@ -589,7 +639,7 @@ class TrainTrajectoryInterpolator:
         else:
             plt.show()
 
-    def plot_full_trip_overview_with_bands(self, trip_df, interps, title, filename, tcol='t_rel'):
+    def plot_full_trip_overview_with_bands(self, trip_df, interps, title, filename, tcol='t_rel', station_distances_ft=None):
         if not interps: return None
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), constrained_layout=True)
         fig.set_constrained_layout_pads(w_pad=0.08, h_pad=0.10, wspace=0.12, hspace=0.15)
@@ -639,6 +689,29 @@ class TrainTrajectoryInterpolator:
         ax2.set_ylabel('Velocity (m/s)')
         ax2.set_title('Velocity vs Time (feasible bands)')
         ax2.legend(loc='upper right')
+
+        # Overlay station markers as vertical lines using the likely curve to map distance→time
+        try:
+            stations_ft = station_distances_ft or []
+            if stations_ft:
+                # Build global time/likely arrays (feet)
+                all_t = []
+                all_like_ft = []
+                for p in interps:
+                    all_t.extend([float(x) for x in p['time']])
+                    all_like_ft.extend([float(x) for x in p['likely_position']])
+                import numpy as _np
+                t_arr = _np.asarray(all_t)
+                x_arr = _np.asarray(all_like_ft)
+                if len(t_arr) and len(x_arr) and _np.all(_np.isfinite(t_arr)) and _np.all(_np.isfinite(x_arr)):
+                    for dft in stations_ft:
+                        # nearest time index for this distance
+                        idx = int(_np.argmin(_np.abs(x_arr - float(dft))))
+                        tt = float(t_arr[idx])
+                        ax1.axvline(tt, color='tab:orange', linestyle=':', alpha=0.25, linewidth=1.0)
+                        ax2.axvline(tt, color='tab:orange', linestyle=':', alpha=0.20, linewidth=0.9)
+        except Exception:
+            pass
 
         out = self.dirs['overview'] / filename
         safe_savefig(fig, out)
@@ -879,11 +952,19 @@ class TrainTrajectoryInterpolator:
                 if segments_to_plot is None or i < segments_to_plot:
                     self.plot_segment_detail(i, data, p, tcol='t_rel', save=True, label_prefix=f"{label_prefix} ")
 
+        # Pick station distances for this direction if available
+        stations = []
+        try:
+            key = 'inbound' if str(label_prefix).lower().startswith('in') else 'outbound'
+            stations = self.stations.get(key, [])
+        except Exception:
+            stations = []
         self.plot_full_trip_overview_with_bands(
             data, interps,
             title=f"{label_prefix} Full Trip Overview (Trip {trip_id}) — lens w/ reverse",
             filename=f"{label_prefix.lower()}_full_trip_overview.png",
-            tcol='t_rel'
+            tcol='t_rel',
+            station_distances_ft=stations
         )
         interps_alt = []
         for i in range(len(data)-1):
