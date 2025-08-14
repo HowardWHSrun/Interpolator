@@ -1,0 +1,65 @@
+name,Distance,Direction,type,dist miles,notes
+???,2627,inbound,non station
+Metro Embarcadero Station,3460,inbound,station
+Metro Embarcadero Station,3550,outbound,station
+Metro Montgomery Station,5260,inbound,station,0.996212121
+Metro Montgomery Station,5580,outbound,station,1.056818182
+Metro Powell Station,7585,inbound,station,1.43655303
+Metro Powell Station,7910,outbound,station,1.498106061
+Metro Civic Center Station,10140,inbound,station,1.920454545
+Metro Civic Center Station,10515,outbound,station,1.991477273
+Metro Van Ness Station,12515,inbound,station,2.370265152
+Metro Van Ness Station,12580,outbound,station,2.382575758
+Near Market and 12th,13060,inbound,non station,2.473484848
+Market and Duboce,15460,inbound,non station,2.928030303
+Metro Church Station,16770,inbound,station,3.176136364
+Metro Church Station,16945,outbound,station,3.209280303
+Metro Castro Station,19035,inbound,station,3.605113636
+Metro Castro Station,19180,outbound,station,3.632575758
+Market and Diamond,19790,inbound,non station,3.748106061
+Metro Forest Hill Station,27720,inbound,station,5.25
+Metro Forest Hill Station,27875,outbound,station,5.279356061
+Near West Portal,30130,outbound,non station,5.706439394
+Near West Portal,30570,outbound,non station,5.789772727
+West Portal Station,30740,inbound,station,5.821969697
+West Portal Station,30940,outbound,station,5.859848485
+West Portal Ave & Ulloa,31225,inbound,non station,5.913825758
+West Portal Ave & Vincente St,31525,outbound,non station,5.970643939
+West Portal Ave & Vincente St,31760,inbound,non station,6.015151515
+West Portal Ave & 14th Ave Station,32400,outbound,station,6.136363636
+West Portal Ave & 14th Ave Station,32620,inbound,station,6.178030303
+West Portal Ave & 15th Ave,33080,outbound,non station,6.265151515
+West Portal Ave & 15th Ave,33340,inbound,non station,6.314393939
+West Portal/Sloat/St Francis Circle Station,33675,outbound,station,6.377840909
+West Portal/Sloat/St Francis Circle Station,33675,inbound,station,6.377840909
+West Portal Ave & Sloat Blvd,34075,inbound,non station,6.453598485
+Junipero Serra Blvd & Ocean Ave Station,35120,outbound,station,6.651515152
+Junipero Serra Blvd & Ocean Ave Station,35120,inbound,station,6.651515152
+Junipero Serra Blvd & Ocean Ave,35435,inbound,non station,6.711174242
+Ocean Ave & San Fernando Way,35700,outbound,non station,6.761363636
+Ocean Ave & San Fernando Way,35930,inbound,non station,6.804924242
+Ocean Ave & San Leandro Way Station,35955,outbound,station,6.809659091, not 6.82?
+Ocean Ave & San Leandro Way Station,36175,inbound,station,6.851325758
+Ocean Ave & Aptos Ave Station,36745,outbound,station,6.959280303
+Ocean Ave & Aptos Ave Station,36975,inbound,station,7.002840909
+Ocean Ave & Victoria St Station,38095,outbound,station,7.214962121
+Ocean Ave & Fairfield Way Station,38320,inbound,station,7.257575758
+Ocean Ave & Ashton Ave,38919,inbound,non station,7.371022727
+Ocean Ave & Jules Ave Station,39030,outbound,station,7.392045455
+Ocean Ave & Dorado Ter Station,39275,inbound,station,7.43844697
+Ocean Ave & Faxon Ave,39605,inbound,non station,7.50094697
+Ocean Ave & Faxon Ave,39640,outbound,non station,7.507575758
+Ocean Ave & Miramar Ave Station,39945,outbound,station,7.565340909
+Ocean Ave & Miramar Ave Station,40180,inbound,station,7.609848485
+Ocean Ave & Granada Ave,40435,outbound,non station,7.658143939
+Ocean Ave & Plymouth Ave,40805,inbound,non station,7.728219697
+Ocean Ave & Plymouth Ave,40825,outbound,non station,7.732007576
+Ocean Ave & Brighton Ave,41090,inbound,non station,7.78219697
+Ocean Ave & Lee St Station,41160,outbound,station,7.795454545
+Ocean Ave & Lee St Station,41415,inbound,station,7.84375
+Ocean Ave & Frida Kahlo Way,41670,outbound,non station,7.892045455
+Ocean Ave & Frida Kahlo Way,41670,inbound,non station,7.892045455
+Ocean Ave/CCSF Pedestrian Bridge Station,42140,outbound,station,7.981060606
+Ocean Ave/CCSF Pedestrian Bridge Station,42140,inbound,station,7.981060606
+Ocean Ave & Howth St,42475,outbound,non station,8.044507576
+Ocean Ave & Howth St,42715,inbound,non station,8.089962121

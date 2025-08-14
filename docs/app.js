@@ -102,6 +102,29 @@ async function fetchRawTrips() {
   return trips;
 }
 
+// ----------------------- Static stations (from CSV) ----------------------- //
+let STATIONS_CACHE = null;
+async function fetchStations() {
+  if (STATIONS_CACHE) return STATIONS_CACHE;
+  try {
+    const rows = await fetchCSV('data/sfmta_k_line_stop_locations.csv');
+    // Normalize fields: only keep rows with numeric Distance and type==='station'
+    const stations = rows
+      .filter(r => r && r.type && String(r.type).toLowerCase().includes('station'))
+      .map(r => ({
+        name: String(r.name || '').trim(),
+        dir: String(r.Direction || r.direction || '').toLowerCase().trim(),
+        dist_ft: Number(r.Distance)
+      }))
+      .filter(r => Number.isFinite(r.dist_ft) && r.dir);
+    STATIONS_CACHE = stations;
+    return stations;
+  } catch (e) {
+    STATIONS_CACHE = [];
+    return STATIONS_CACHE;
+  }
+}
+
 function decimateXY(x, y, maxPoints=1000) {
   if (x.length <= maxPoints) return { x, y };
   const step = Math.ceil(x.length / maxPoints);
@@ -352,6 +375,35 @@ async function renderDirection(dirKey, dirSpec) {
   distLayout.margin = Object.assign({}, distLayout.margin, { b: 80 });
   distLayout.hovermode = 'x unified';
   distLayout.dragmode = 'select';
+  // Add station markers as vertical lines at known distances converted to meters
+  try {
+    const stations = await fetchStations();
+    // Map distance→time by projecting onto likely curve (nearest-distance time)
+    const timeForDist = (distFt) => {
+      if (!likePos || !likePos.length) return null;
+      // work in feet (likePos is ft); find nearest index by absolute diff
+      let bestIdx = -1, bestDiff = Infinity;
+      for (let i = 0; i < likePos.length; i++) {
+        const d = Math.abs(likePos[i] - distFt);
+        if (d < bestDiff) { bestDiff = d; bestIdx = i; }
+      }
+      return bestIdx >= 0 ? time[bestIdx] : null;
+    };
+    const vlines = [];
+    for (const s of stations) {
+      if (s.dir !== dirKey) continue;
+      const tAt = timeForDist(s.dist_ft);
+      if (tAt == null) continue;
+      vlines.push({
+        type: 'line', xref: 'x', yref: 'paper',
+        x0: tAt, x1: tAt, y0: 0, y1: 1,
+        line: { color: 'rgba(234,88,12,0.45)', width: 1, dash: 'dot' }
+      });
+    }
+    if (vlines.length) {
+      distLayout.shapes = (distLayout.shapes || []).concat(vlines);
+    }
+  } catch {}
   Plotly.newPlot(`distanceChart-${dirKey}`, distData, distLayout, { responsive: true, displaylogo: false, scrollZoom: true, modeBarButtonsToRemove: ['lasso2d','toImage','resetScale2d'] });
   // Overlay original points on main charts (flip inbound for display)
   try {
