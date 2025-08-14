@@ -419,8 +419,8 @@ async function renderDirection(dirKey, dirSpec) {
           const dhi = Math.max(...dY);
           dY = dY.map(v => (dhi + dlo - v));
         }
-        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
-        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
+        Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
+        Plotly.addTraces(`speedChart-${dirKey}`, [{ x: t.t_rel, y: t.spd, type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' }]);
       }
     }
   } catch {}
@@ -472,7 +472,7 @@ async function renderDirection(dirKey, dirSpec) {
             const dhi = Math.max(...dAll);
             dAll = dAll.map(v => (dhi + dlo - v));
           }
-          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => dAll[i]*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
+          distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => dAll[i]*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
         }
       }
     } catch {}
@@ -489,7 +489,7 @@ async function renderDirection(dirKey, dirSpec) {
         const tr = trips.find(r => r.dir === dir && String(r.trip_id) === String(selectedId));
         if (tr) {
           const idx = tr.t_rel.map((t, i) => [t, i]).filter(([t]) => t >= tSel[0] && t <= tSel[tSel.length-1]).map(([,i]) => i);
-          spdSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => tr.spd[i]), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
+          spdSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => tr.spd[i]), type: 'scattergl', mode: 'lines+markers', line: { width: 1, color: '#111827' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
         }
       }
     } catch {}
