@@ -344,10 +344,12 @@ async function renderDirection(dirKey, dirSpec) {
     maxSpd.push(Number.isFinite(smax) ? smax : 0);
     likeSpd.push(Number.isFinite(slike) ? slike : 0);
   }
-  // Normalize inbound to increasing distance (flip positions)
+  // Normalize inbound to increasing distance (flip positions) — use one shared flip for charts + overlays
+  let inboundFlip = null;
   if (dirKey === 'inbound' && likePos.length >= 2) {
     const lo = Math.min(...likePos);
     const hi = Math.max(...likePos);
+    inboundFlip = { lo, hi };
     const flip = (v) => (hi + lo - v);
     const minF = minPos.map(flip);
     const maxF = maxPos.map(flip);
@@ -423,10 +425,9 @@ async function renderDirection(dirKey, dirSpec) {
       const t = trips.find(r => r.dir === dirKey.toLowerCase() && String(r.trip_id) === String(selectedId));
       if (t) {
         let dY = t.dist.slice();
-        if (dirKey === 'inbound' && dY.length >= 2) {
-          const dlo = Math.min(...dY);
-          const dhi = Math.max(...dY);
-          dY = dY.map(v => (dhi + dlo - v));
+        if (inboundFlip && dY.length >= 2) {
+          const { lo, hi } = inboundFlip;
+          dY = dY.map(v => (hi + lo - v));
         }
         // Overview: show raw points as markers only (avoid double-line confusion)
         Plotly.addTraces(`distanceChart-${dirKey}`, [{ x: t.t_rel, y: dY.map(v => v*0.3048), type: 'scattergl', mode: 'markers', marker: { size: 4, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: true, hoverinfo: 'skip' }]);
@@ -477,10 +478,9 @@ async function renderDirection(dirKey, dirSpec) {
         if (tr) {
           const idx = tr.t_rel.map((t, i) => [t, i]).filter(([t]) => t >= tSel[0] && t <= tSel[tSel.length-1]).map(([,i]) => i);
           let dAll = tr.dist.slice();
-          if (dir === 'inbound' && dAll.length >= 2) {
-            const dlo = Math.min(...dAll);
-            const dhi = Math.max(...dAll);
-            dAll = dAll.map(v => (dhi + dlo - v));
+          if (inboundFlip && dAll.length >= 2) {
+            const { lo, hi } = inboundFlip;
+            dAll = dAll.map(v => (hi + lo - v));
           }
           // Detail panel: connect raw markers with a faint line for readability
           distSeries.push({ x: idx.map(i => tr.t_rel[i]), y: idx.map(i => dAll[i]*0.3048), type: 'scattergl', mode: 'lines+markers', line: { width: 0.8, color: 'rgba(17,24,39,0.5)' }, marker: { size: 3, color: '#111827', opacity: 0.75 }, name: 'Original points', showlegend: false, hoverinfo: 'skip' });
